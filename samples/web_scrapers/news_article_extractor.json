@@ -1,0 +1,182 @@
+{
+  "agent": {
+    "name": "News Article Extractor",
+    "description": "Extracts structured data from news articles with advanced parsing",
+    "version": "1.0.0",
+    "max_iterations": 3,
+    "timeout": "180s"
+  },
+  "llm": {
+    "provider": "deepinfra",
+    "model": "google/gemini-2.5-flash",
+    "max_tokens": 2000,
+    "temperature": 0.0,
+    "system_prompt": "You are an expert news article parser. Extract structured information from HTML content with high accuracy. Focus on identifying article title, author, publication date, main content, and metadata. Return only valid JSON."
+  },
+  "data_sources": [
+    {
+      "name": "article_url",
+      "type": "web",
+      "config": {
+        "url": "{{target_url}}",
+        "timeout": 30,
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        },
+        "follow_redirects": true
+      }
+    },
+    {
+      "name": "extraction_schema",
+      "type": "file",
+      "config": {
+        "path": "samples/schemas/news_article_schema.json"
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "name": "article_extraction_pipeline",
+      "description": "Complete pipeline for news article extraction",
+      "steps": [
+        {
+          "name": "validate_content",
+          "type": "tool",
+          "config": {
+            "tool": "content_validator",
+            "params": {
+              "min_content_length": 500,
+              "required_elements": ["title", "content"]
+            }
+          },
+          "retry": {
+            "max_attempts": 2,
+            "backoff": "linear"
+          }
+        },
+        {
+          "name": "extract_article_data",
+          "type": "llm",
+          "depends_on": ["validate_content"],
+          "config": {
+            "prompt": "Extract article information from the HTML content according to the provided schema. Focus on accuracy and completeness.",
+            "context_sources": ["article_url", "extraction_schema"],
+            "temperature": 0.0,
+            "max_tokens": 2000
+          },
+          "retry": {
+            "max_attempts": 3,
+            "backoff": "exponential"
+          }
+        },
+        {
+          "name": "validate_extraction",
+          "type": "tool",
+          "depends_on": ["extract_article_data"],
+          "config": {
+            "tool": "json_validator",
+            "params": {
+              "schema_source": "extraction_schema",
+              "strict_validation": true
+            }
+          }
+        },
+        {
+          "name": "save_results",
+          "type": "tool",
+          "depends_on": ["validate_extraction"],
+          "config": {
+            "tool": "write_file",
+            "params": {
+              "path": "{{output_path}}",
+              "content": "{{extract_article_data.output}}",
+              "format": "json",
+              "create_backup": true
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "tools": {
+    "write_file": {
+      "enabled": true,
+      "config": {
+        "allowed_paths": ["./output/*", "./data/*"],
+        "create_directories": true,
+        "backup_enabled": true
+      }
+    },
+    "json_validator": {
+      "enabled": true,
+      "config": {
+        "strict_mode": true,
+        "detailed_errors": true
+      }
+    },
+    "content_validator": {
+      "enabled": true,
+      "config": {
+        "html_parsing": true,
+        "text_extraction": true
+      }
+    }
+  },
+  "outputs": [
+    {
+      "name": "file_output",
+      "type": "file",
+      "config": {
+        "path": "{{output_path}}",
+        "format": "json",
+        "pretty_print": true,
+        "include_metadata": true
+      }
+    },
+    {
+      "name": "console_summary",
+      "type": "console",
+      "config": {
+        "format": "summary",
+        "show_metrics": true
+      }
+    }
+  ],
+  "security": {
+    "enabled": true,
+    "allowed_paths": ["./output/*", "./data/*", "./samples/*"],
+    "max_file_size": "10MB",
+    "allowed_domains": ["*.com", "*.org", "*.net"]
+  },
+  "environment": {
+    "log_level": "info",
+    "workspace_root": ".",
+    "variables": {
+      "target_url": "https://example.com/article",
+      "output_path": "./output/extracted_article.json"
+    },
+    "limits": {
+      "max_memory": "512MB",
+      "max_execution_time": "300s"
+    }
+  },
+  "validation": {
+    "enabled": true,
+    "rules": [
+      {
+        "type": "json_schema",
+        "config": {
+          "schema_file": "samples/schemas/news_article_schema.json"
+        }
+      },
+      {
+        "type": "content_quality",
+        "config": {
+          "min_content_length": 100,
+          "required_fields": ["title", "content", "source"]
+        }
+      }
+    ],
+    "on_failure": "retry"
+  }
+}

@@ -1,0 +1,94 @@
+{
+  "agent": {
+    "name": "Simple Web Data Scraper",
+    "description": "Basic web scraper demonstration",
+    "version": "1.0.0",
+    "max_iterations": 2,
+    "timeout": "60s"
+  },
+  "llm": {
+    "provider": "openai",
+    "model": "gpt-4",
+    "max_tokens": 2000,
+    "temperature": 0.1,
+    "system_prompt": "You are a data extraction specialist. Extract key information from web content."
+  },
+  "data_sources": [
+    {
+      "name": "web_content",
+      "type": "web",
+      "config": {
+        "url": "https://httpbin.org/html",
+        "timeout": 30
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "name": "simple_scraping",
+      "description": "Basic web content extraction",
+      "steps": [
+        {
+          "name": "fetch_webpage",
+          "type": "data_ingestion",
+          "config": {
+            "source": "web_content"
+          }
+        },
+        {
+          "name": "extract_info",
+          "type": "llm_processing", 
+          "depends_on": ["fetch_webpage"],
+          "config": {
+            "prompt": "Extract the main title, any headings, and key text content from this HTML. Return as simple JSON with 'title', 'headings', and 'content' fields."
+          }
+        }
+      ]
+    }
+  ],
+  "tools": {
+    "web_fetch": {
+      "enabled": true,
+      "config": {
+        "timeout": 30
+      }
+    },
+    "json_processor": {
+      "enabled": true
+    },
+    "file_writer": {
+      "enabled": true,
+      "config": {
+        "allowed_paths": ["./output/*"]
+      }
+    }
+  },
+  "outputs": [
+    {
+      "name": "console_output",
+      "type": "console", 
+      "config": {
+        "format": "json",
+        "pretty_print": true
+      }
+    },
+    {
+      "name": "file_output",
+      "type": "file",
+      "config": {
+        "path": "./output/simple_scraped_data.json",
+        "format": "json",
+        "pretty_print": true
+      }
+    }
+  ],
+  "security": {
+    "enabled": true,
+    "allowed_paths": ["./output/*"],
+    "max_file_size": "5MB"
+  },
+  "environment": {
+    "log_level": "info",
+    "workspace_root": "."
+  }
+}

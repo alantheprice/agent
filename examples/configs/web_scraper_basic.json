@@ -1,0 +1,89 @@
+{
+  "agent": {
+    "name": "Basic Web Scraper",
+    "description": "Simple web scraper that demonstrates data ingestion",
+    "version": "1.0.0",
+    "max_iterations": 2,
+    "timeout": "60s"
+  },
+  "llm": {
+    "provider": "deepinfra",
+    "model": "google/gemini-2.5-flash",
+    "max_tokens": 1000,
+    "temperature": 0.1,
+    "system_prompt": "You are a data extraction specialist.",
+    "provider_config": {
+      "api_key": "YfDMmq5Ys3cJcSwufsU9YsXRFliygmTK"
+    }
+  },
+  "data_sources": [
+    {
+      "name": "web_content",
+      "type": "web",
+      "config": {
+        "url": "https://httpbin.org/html",
+        "timeout": 30,
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        }
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "name": "basic_scraping",
+      "description": "Basic web content fetching",
+      "steps": [
+        {
+          "name": "show_ingested_data",
+          "type": "tool",
+          "config": {
+            "tool": "console_output",
+            "params": {
+              "message": "Successfully fetched web content. Framework is working!"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "tools": {
+    "web_fetch": {
+      "enabled": true,
+      "config": {
+        "timeout": 30
+      }
+    },
+    "console_output": {
+      "enabled": true
+    },
+    "file_writer": {
+      "enabled": true,
+      "config": {
+        "allowed_paths": ["./output/*"]
+      }
+    }
+  },
+  "outputs": [
+    {
+      "name": "console_output",
+      "type": "console", 
+      "config": {
+        "format": "text",
+        "pretty_print": true
+      }
+    }
+  ],
+  "security": {
+    "enabled": true,
+    "allowed_paths": ["./output/*"],
+    "max_file_size": "5MB"
+  },
+  "environment": {
+    "log_level": "info",
+    "workspace_root": ".",
+    "variables": {
+      "DEEPINFRA_API_KEY": "YfDMmq5Ys3cJcSwufsU9YsXRFliygmTK"
+    }
+  }
+}

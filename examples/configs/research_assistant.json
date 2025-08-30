@@ -1,0 +1,243 @@
+{
+  "agent": {
+    "name": "Research Assistant",
+    "description": "Conducts comprehensive research on topics, gathering information from multiple sources and synthesizing findings",
+    "version": "1.0.0",
+    "goals": [
+      "Gather information from multiple sources",
+      "Synthesize research findings",
+      "Generate comprehensive research reports",
+      "Provide accurate citations and references"
+    ],
+    "capabilities": [
+      "Web research",
+      "Document analysis",
+      "Information synthesis",
+      "Report generation"
+    ],
+    "max_iterations": 25,
+    "timeout": "20m",
+    "interactive": true
+  },
+  "llm": {
+    "provider": "gemini",
+    "model": "gemini-1.5-pro",
+    "temperature": 0.4,
+    "max_tokens": 8000,
+    "system_prompt": "You are a research assistant with expertise in gathering, analyzing, and synthesizing information from multiple sources. Provide accurate, well-cited, and comprehensive research."
+  },
+  "data_sources": [
+    {
+      "name": "research_query",
+      "type": "stdin",
+      "config": {},
+      "preprocessing": [
+        {
+          "type": "transform",
+          "config": {
+            "type": "trim"
+          }
+        }
+      ]
+    },
+    {
+      "name": "reference_library",
+      "type": "directory",
+      "config": {
+        "path": "./library",
+        "recursive": true,
+        "format": "text"
+      },
+      "preprocessing": [
+        {
+          "type": "filter",
+          "config": {
+            "includes": [".pdf", ".txt", ".md", ".doc"]
+          }
+        }
+      ]
+    }
+  ],
+  "workflows": [
+    {
+      "name": "comprehensive_research",
+      "description": "Conduct comprehensive research on a given topic",
+      "trigger": {
+        "conditions": ["research_request"],
+        "priority": 100
+      },
+      "steps": [
+        {
+          "name": "clarify_scope",
+          "type": "tool",
+          "config": {
+            "tool": "ask_user",
+            "params": {
+              "question": "What specific aspects of {input} would you like me to focus on? Please provide key areas of interest."
+            }
+          }
+        },
+        {
+          "name": "search_library",
+          "type": "llm",
+          "config": {
+            "prompt": "Search through the reference library for information related to: {input}. Focus on: {scope}. Library contents: {reference_library}"
+          },
+          "depends_on": ["clarify_scope"]
+        },
+        {
+          "name": "identify_gaps",
+          "type": "llm",
+          "config": {
+            "prompt": "Based on the library search results, identify information gaps that need additional research: {search_results}"
+          },
+          "depends_on": ["search_library"]
+        },
+        {
+          "name": "synthesize_findings",
+          "type": "llm",
+          "config": {
+            "prompt": "Synthesize all research findings into a coherent analysis. Include: key findings, trends, conclusions, and areas for further research. Research data: {search_results}"
+          },
+          "depends_on": ["identify_gaps"]
+        },
+        {
+          "name": "generate_report",
+          "type": "llm",
+          "config": {
+            "prompt": "Create a comprehensive research report with the following structure: Executive Summary, Introduction, Methodology, Findings, Analysis, Conclusions, Recommendations, and References. Base it on: {synthesis}"
+          },
+          "depends_on": ["synthesize_findings"]
+        },
+        {
+          "name": "create_bibliography",
+          "type": "llm",
+          "config": {
+            "prompt": "Create a properly formatted bibliography for all sources referenced in this research. Format in APA style."
+          },
+          "depends_on": ["generate_report"]
+        }
+      ],
+      "output": {
+        "format": "markdown",
+        "destination": "research/reports/",
+        "template": "research_report"
+      }
+    },
+    {
+      "name": "quick_research",
+      "description": "Conduct quick research for immediate answers",
+      "trigger": {
+        "conditions": ["quick_question"],
+        "priority": 70
+      },
+      "steps": [
+        {
+          "name": "search_sources",
+          "type": "llm",
+          "config": {
+            "prompt": "Quickly search available sources for information about: {input}. Sources: {reference_library}"
+          }
+        },
+        {
+          "name": "summarize_answer",
+          "type": "llm",
+          "config": {
+            "prompt": "Provide a concise but comprehensive answer to the question based on the search results: {search_results}"
+          },
+          "depends_on": ["search_sources"]
+        }
+      ],
+      "output": {
+        "format": "text",
+        "destination": "console"
+      }
+    }
+  ],
+  "tools": {
+    "ask_user": {
+      "enabled": true,
+      "timeout": "300s"
+    },
+    "read_file": {
+      "enabled": true,
+      "timeout": "60s"
+    },
+    "write_file": {
+      "enabled": true,
+      "timeout": "60s"
+    },
+    "list_files": {
+      "enabled": true,
+      "timeout": "30s"
+    }
+  },
+  "outputs": [
+    {
+      "name": "research_report",
+      "type": "file",
+      "config": {
+        "path": "research/reports/research_{timestamp}.md",
+        "format": "markdown",
+        "append": false
+      }
+    },
+    {
+      "name": "quick_answer",
+      "type": "console",
+      "config": {
+        "format": "text"
+      }
+    },
+    {
+      "name": "bibliography",
+      "type": "file",
+      "config": {
+        "path": "research/bibliography_{timestamp}.md",
+        "format": "markdown",
+        "append": false
+      }
+    }
+  ],
+  "environment": {
+    "variables": {
+      "RESEARCH_DIR": "./research",
+      "LIBRARY_DIR": "./library"
+    },
+    "workspace_root": ".",
+    "log_level": "info",
+    "cache": {
+      "enabled": true,
+      "ttl": "4h",
+      "directory": ".agent/cache"
+    }
+  },
+  "security": {
+    "enabled": true,
+    "allowed_paths": ["./research", "./library", "./.agent"],
+    "max_file_size": "100MB",
+    "require_approval": false
+  },
+  "validation": {
+    "enabled": true,
+    "rules": [
+      {
+        "name": "report_completeness",
+        "type": "custom",
+        "config": {
+          "validator": "length_range",
+          "min": 1000,
+          "max": 50000
+        }
+      },
+      {
+        "name": "has_references",
+        "type": "regex",
+        "config": {
+          "pattern": "(References|Bibliography)"
+        }
+      }
+    ],
+    "on_failure": "warn"
+  }
+}

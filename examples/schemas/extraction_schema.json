@@ -1,0 +1,127 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Website Article Extraction Schema",
+  "description": "Schema for extracting structured data from news articles or blog posts",
+  "type": "object",
+  "properties": {
+    "article": {
+      "type": "object",
+      "properties": {
+        "title": {
+          "type": "string",
+          "description": "Main title of the article"
+        },
+        "subtitle": {
+          "type": ["string", "null"],
+          "description": "Subtitle or tagline of the article"
+        },
+        "author": {
+          "type": "object",
+          "properties": {
+            "name": {
+              "type": ["string", "null"],
+              "description": "Author's full name"
+            },
+            "profile_url": {
+              "type": ["string", "null"],
+              "description": "Link to author's profile or bio page"
+            }
+          },
+          "required": ["name"]
+        },
+        "publication_date": {
+          "type": ["string", "null"],
+          "description": "Date when article was published (any format)"
+        },
+        "content": {
+          "type": "object",
+          "properties": {
+            "summary": {
+              "type": ["string", "null"],
+              "description": "Brief summary or excerpt of the article"
+            },
+            "body_text": {
+              "type": "string",
+              "description": "Main body content of the article (first 500 chars)"
+            },
+            "word_count": {
+              "type": ["integer", "null"],
+              "description": "Estimated word count of the article"
+            }
+          },
+          "required": ["body_text"]
+        },
+        "metadata": {
+          "type": "object",
+          "properties": {
+            "tags": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Article tags or categories"
+            },
+            "reading_time": {
+              "type": ["string", "null"],
+              "description": "Estimated reading time (e.g., '5 min read')"
+            },
+            "social_shares": {
+              "type": "object",
+              "properties": {
+                "twitter": {
+                  "type": ["integer", "null"]
+                },
+                "facebook": {
+                  "type": ["integer", "null"]
+                },
+                "linkedin": {
+                  "type": ["integer", "null"]
+                }
+              }
+            }
+          }
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "website_name": {
+              "type": ["string", "null"],
+              "description": "Name of the website/publication"
+            },
+            "url": {
+              "type": "string",
+              "description": "Source URL of the article"
+            },
+            "domain": {
+              "type": "string",
+              "description": "Domain of the source website"
+            }
+          },
+          "required": ["url", "domain"]
+        }
+      },
+      "required": ["title", "content", "source"]
+    },
+    "extraction_metadata": {
+      "type": "object",
+      "properties": {
+        "extracted_at": {
+          "type": "string",
+          "description": "ISO timestamp of when extraction occurred"
+        },
+        "confidence_score": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "Confidence level of extraction accuracy (0.0 to 1.0)"
+        },
+        "fields_extracted": {
+          "type": "integer",
+          "description": "Number of fields successfully extracted"
+        }
+      },
+      "required": ["extracted_at", "confidence_score", "fields_extracted"]
+    }
+  },
+  "required": ["article", "extraction_metadata"]
+}

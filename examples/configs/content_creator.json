@@ -1,0 +1,222 @@
+{
+  "agent": {
+    "name": "Content Creator Agent",
+    "description": "Creates various types of content including articles, documentation, and marketing materials",
+    "version": "1.0.0",
+    "goals": [
+      "Generate high-quality written content",
+      "Create documentation from source materials",
+      "Produce marketing copy and materials",
+      "Maintain consistent tone and style"
+    ],
+    "capabilities": [
+      "Article writing",
+      "Documentation generation",
+      "Marketing copywriting",
+      "Content optimization"
+    ],
+    "max_iterations": 20,
+    "timeout": "15m",
+    "interactive": true
+  },
+  "llm": {
+    "provider": "anthropic",
+    "model": "claude-3-sonnet-20240229",
+    "temperature": 0.7,
+    "max_tokens": 4000,
+    "system_prompt": "You are a skilled content creator and copywriter. Create engaging, well-structured content that meets the specified requirements and maintains a professional tone."
+  },
+  "data_sources": [
+    {
+      "name": "source_materials",
+      "type": "directory",
+      "config": {
+        "path": "./content/sources",
+        "recursive": true,
+        "format": "text"
+      },
+      "preprocessing": [
+        {
+          "type": "filter",
+          "config": {
+            "includes": [".md", ".txt", ".doc"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "style_guide",
+      "type": "file",
+      "config": {
+        "path": "./config/style_guide.md",
+        "format": "text"
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "name": "create_article",
+      "description": "Create a comprehensive article from source materials",
+      "trigger": {
+        "conditions": ["article_request"],
+        "priority": 90
+      },
+      "steps": [
+        {
+          "name": "research_topic",
+          "type": "llm",
+          "config": {
+            "prompt": "Research and outline the following topic based on the provided sources: {input}. Sources: {source_materials}"
+          }
+        },
+        {
+          "name": "create_outline",
+          "type": "llm",
+          "config": {
+            "prompt": "Create a detailed outline for an article about: {research_results}. Follow the style guide: {style_guide}"
+          },
+          "depends_on": ["research_topic"]
+        },
+        {
+          "name": "write_content",
+          "type": "llm",
+          "config": {
+            "prompt": "Write a comprehensive article based on this outline: {outline}. Make it engaging and informative."
+          },
+          "depends_on": ["create_outline"]
+        },
+        {
+          "name": "review_content",
+          "type": "llm",
+          "config": {
+            "prompt": "Review and improve this article for clarity, engagement, and adherence to style guide: {content}"
+          },
+          "depends_on": ["write_content"]
+        }
+      ],
+      "output": {
+        "format": "markdown",
+        "destination": "output/articles/",
+        "template": "article"
+      }
+    },
+    {
+      "name": "create_documentation",
+      "description": "Generate documentation from code or specifications",
+      "trigger": {
+        "conditions": ["documentation_request"],
+        "priority": 80
+      },
+      "steps": [
+        {
+          "name": "analyze_source",
+          "type": "tool",
+          "config": {
+            "tool": "read_file",
+            "params": {
+              "path": "{source_file}"
+            }
+          }
+        },
+        {
+          "name": "extract_structure",
+          "type": "llm",
+          "config": {
+            "prompt": "Analyze this source material and extract the key structure and components: {source_content}"
+          },
+          "depends_on": ["analyze_source"]
+        },
+        {
+          "name": "generate_docs",
+          "type": "llm",
+          "config": {
+            "prompt": "Create comprehensive documentation based on this structure: {structure}. Include examples and clear explanations."
+          },
+          "depends_on": ["extract_structure"]
+        }
+      ],
+      "output": {
+        "format": "markdown",
+        "destination": "output/docs/",
+        "template": "documentation"
+      }
+    }
+  ],
+  "tools": {
+    "read_file": {
+      "enabled": true,
+      "timeout": "30s"
+    },
+    "write_file": {
+      "enabled": true,
+      "timeout": "60s"
+    },
+    "list_files": {
+      "enabled": true,
+      "timeout": "30s"
+    },
+    "ask_user": {
+      "enabled": true,
+      "timeout": "300s"
+    }
+  },
+  "outputs": [
+    {
+      "name": "content_file",
+      "type": "file",
+      "config": {
+        "path": "output/{workflow_name}_{timestamp}.md",
+        "format": "markdown",
+        "append": false
+      }
+    },
+    {
+      "name": "preview",
+      "type": "console",
+      "config": {
+        "format": "markdown"
+      }
+    }
+  ],
+  "environment": {
+    "variables": {
+      "CONTENT_DIR": "./content",
+      "OUTPUT_DIR": "./output"
+    },
+    "workspace_root": ".",
+    "log_level": "info",
+    "cache": {
+      "enabled": true,
+      "ttl": "2h",
+      "directory": ".agent/cache"
+    }
+  },
+  "security": {
+    "enabled": true,
+    "allowed_paths": ["./content", "./output", "./config", "./.agent"],
+    "max_file_size": "10MB",
+    "require_approval": false
+  },
+  "validation": {
+    "enabled": true,
+    "rules": [
+      {
+        "name": "content_quality",
+        "type": "custom",
+        "config": {
+          "validator": "length_range",
+          "min": 500,
+          "max": 20000
+        }
+      },
+      {
+        "name": "markdown_format",
+        "type": "regex",
+        "config": {
+          "pattern": "^#\\s+.+"
+        }
+      }
+    ],
+    "on_failure": "warn"
+  }
+}

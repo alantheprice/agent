@@ -1,0 +1,186 @@
+{
+  "agent": {
+    "name": "Data Analyzer Agent",
+    "description": "Analyzes data from various sources and generates insights and reports",
+    "version": "1.0.0",
+    "goals": [
+      "Ingest data from multiple sources",
+      "Process and analyze data patterns",
+      "Generate actionable insights",
+      "Create comprehensive reports"
+    ],
+    "capabilities": [
+      "CSV data processing",
+      "Statistical analysis",
+      "Report generation",
+      "Data visualization"
+    ],
+    "max_iterations": 15,
+    "timeout": "10m",
+    "interactive": false
+  },
+  "llm": {
+    "provider": "openai",
+    "model": "gpt-4",
+    "temperature": 0.3,
+    "max_tokens": 4000,
+    "system_prompt": "You are a data analyst expert. Analyze data thoroughly and provide clear, actionable insights."
+  },
+  "data_sources": [
+    {
+      "name": "sales_data",
+      "type": "file",
+      "config": {
+        "path": "./data/sales.csv",
+        "format": "csv"
+      },
+      "preprocessing": [
+        {
+          "type": "validate",
+          "config": {
+            "format": "csv"
+          }
+        }
+      ]
+    },
+    {
+      "name": "user_feedback",
+      "type": "api",
+      "config": {
+        "url": "https://api.example.com/feedback",
+        "headers": {
+          "Authorization": "Bearer ${API_TOKEN}"
+        }
+      },
+      "preprocessing": [
+        {
+          "type": "validate",
+          "config": {
+            "format": "json"
+          }
+        }
+      ]
+    }
+  ],
+  "workflows": [
+    {
+      "name": "analyze_data",
+      "description": "Main data analysis workflow",
+      "trigger": {
+        "conditions": ["has_data_sources"],
+        "priority": 100
+      },
+      "steps": [
+        {
+          "name": "load_data",
+          "type": "tool",
+          "config": {
+            "tool": "json_parse",
+            "params": {
+              "source": "ingested_data"
+            }
+          }
+        },
+        {
+          "name": "analyze_trends",
+          "type": "llm",
+          "config": {
+            "prompt": "Analyze the following data for trends, patterns, and insights: {data}"
+          },
+          "depends_on": ["load_data"]
+        },
+        {
+          "name": "generate_summary",
+          "type": "llm",
+          "config": {
+            "prompt": "Create a comprehensive summary report based on this analysis: {analysis_results}"
+          },
+          "depends_on": ["analyze_trends"]
+        }
+      ],
+      "output": {
+        "format": "markdown",
+        "destination": "reports/analysis_report.md",
+        "template": "analysis_report"
+      }
+    }
+  ],
+  "tools": {
+    "json_parse": {
+      "enabled": true,
+      "timeout": "30s"
+    },
+    "json_format": {
+      "enabled": true,
+      "timeout": "30s"
+    },
+    "read_file": {
+      "enabled": true,
+      "timeout": "60s"
+    },
+    "write_file": {
+      "enabled": true,
+      "timeout": "60s"
+    }
+  },
+  "outputs": [
+    {
+      "name": "analysis_report",
+      "type": "file",
+      "config": {
+        "path": "reports/data_analysis_{timestamp}.md",
+        "format": "markdown",
+        "append": false
+      }
+    },
+    {
+      "name": "console_summary",
+      "type": "console",
+      "config": {
+        "format": "text"
+      }
+    }
+  ],
+  "environment": {
+    "variables": {
+      "API_TOKEN": "${API_TOKEN}",
+      "REPORT_DIR": "./reports"
+    },
+    "workspace_root": ".",
+    "log_level": "info",
+    "cache": {
+      "enabled": true,
+      "ttl": "1h",
+      "directory": ".agent/cache"
+    }
+  },
+  "security": {
+    "enabled": true,
+    "allowed_paths": ["./data", "./reports", "./.agent"],
+    "blocked_paths": ["/etc", "/usr", "/var"],
+    "max_file_size": "50MB",
+    "require_approval": false
+  },
+  "validation": {
+    "enabled": true,
+    "rules": [
+      {
+        "name": "output_not_empty",
+        "type": "custom",
+        "config": {
+          "validator": "not_empty"
+        }
+      },
+      {
+        "name": "report_length_check",
+        "type": "custom",
+        "config": {
+          "validator": "length_range",
+          "min": 100,
+          "max": 10000
+        }
+      }
+    ],
+    "on_failure": "warn"
+  }
+}

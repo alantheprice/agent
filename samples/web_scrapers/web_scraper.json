@@ -1,0 +1,150 @@
+{
+  "agent": {
+    "name": "Web Data Scraper",
+    "description": "Extracts structured data from web pages according to specified JSON schema",
+    "version": "1.0.0",
+    "max_iterations": 3,
+    "timeout": "120s"
+  },
+  "llm": {
+    "provider": "openai",
+    "model": "gpt-4",
+    "max_tokens": 4000,
+    "temperature": 0.1,
+    "system_prompt": "You are a precise data extraction specialist. Extract data from web content according to the provided JSON schema. Return only valid JSON that matches the schema exactly. If a field cannot be found, use null or appropriate default values."
+  },
+  "data_sources": [
+    {
+      "name": "web_content",
+      "type": "web",
+      "config": {
+        "url": "{{url}}",
+        "timeout": 30,
+        "headers": {
+          "User-Agent": "Generic Agent Web Scraper 1.0"
+        },
+        "follow_redirects": true
+      }
+    },
+    {
+      "name": "target_schema",
+      "type": "file",
+      "config": {
+        "path": "{{schema_file}}"
+      }
+    }
+  ],
+  "tools": {
+    "web_fetch": {
+      "enabled": true,
+      "config": {
+        "max_response_size": 5242880,
+        "allowed_domains": ["*"],
+        "timeout": 30
+      }
+    },
+    "json_processor": {
+      "enabled": true,
+      "config": {
+        "validate_schema": true,
+        "pretty_print": true
+      }
+    },
+    "file_writer": {
+      "enabled": true,
+      "config": {
+        "allowed_paths": ["./output/*", "./data/*", "./results/*"],
+        "create_directories": true
+      }
+    }
+  },
+  "workflows": [
+    {
+      "name": "web_scraping_workflow",
+      "description": "Complete workflow for web data extraction",
+      "steps": [
+        {
+          "name": "fetch_webpage",
+          "type": "data_ingestion",
+          "config": {
+            "source": "web_content",
+            "store_as": "raw_html"
+          },
+          "retry": {
+            "max_attempts": 3,
+            "backoff": "exponential"
+          }
+        },
+        {
+          "name": "load_schema",
+          "type": "data_ingestion", 
+          "config": {
+            "source": "target_schema",
+            "store_as": "extraction_schema"
+          },
+          "retry": {
+            "max_attempts": 2,
+            "backoff": "linear"
+          }
+        },
+        {
+          "name": "extract_data",
+          "type": "llm_processing",
+          "depends_on": ["fetch_webpage", "load_schema"],
+          "config": {
+            "prompt": "Extract data from the following HTML content according to the JSON schema provided.\n\nHTML Content:\n{{raw_html}}\n\nTarget JSON Schema:\n{{extraction_schema}}\n\nInstructions:\n1. Parse the HTML content carefully\n2. Extract data that matches the provided schema structure\n3. Return only valid JSON that conforms to the schema\n4. Use null for missing values\n5. Ensure all required fields are populated if data exists\n6. Do not include any explanation or markdown formatting\n\nReturn the extracted JSON:",
+            "store_response_as": "extracted_json"
+          },
+          "retry": {
+            "max_attempts": 3,
+            "backoff": "exponential"
+          }
+        },
+        {
+          "name": "save_results",
+          "type": "output_processing",
+          "depends_on": ["extract_data"],
+          "config": {
+            "data_source": "extracted_json",
+            "format": "json",
+            "destination": "{{output_file}}"
+          }
+        }
+      ]
+    }
+  ],
+  "outputs": [
+    {
+      "name": "file_output",
+      "type": "file",
+      "config": {
+        "path": "{{output_file}}",
+        "format": "json",
+        "pretty_print": true,
+        "create_path": true
+      }
+    },
+    {
+      "name": "console_output",
+      "type": "console",
+      "config": {
+        "format": "json",
+        "pretty_print": true,
+        "include_metadata": false
+      }
+    }
+  ],
+  "security": {
+    "enabled": true,
+    "allowed_paths": ["./output/*", "./data/*", "./examples/*"],
+    "max_file_size": "10MB"
+  },
+  "environment": {
+    "log_level": "info",
+    "workspace_root": ".",
+    "limits": {
+      "max_memory": "512MB",
+      "max_execution_time": "300s"
+    }
+  }
+}

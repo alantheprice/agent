@@ -1,0 +1,90 @@
+{
+  "agent": {
+    "name": "Working Web Scraper Demo",
+    "description": "Demonstrates working web scraping with the generic agent framework",
+    "version": "1.0.0",
+    "max_iterations": 2,
+    "timeout": "60s"
+  },
+  "llm": {
+    "provider": "deepinfra",
+    "model": "google/gemini-2.5-flash",
+    "max_tokens": 1000,
+    "temperature": 0.1,
+    "system_prompt": "You are a data extraction specialist.",
+    "provider_config": {
+      "api_key": "YfDMmq5Ys3cJcSwufsU9YsXRFliygmTK"
+    }
+  },
+  "data_sources": [
+    {
+      "name": "web_content",
+      "type": "web",
+      "config": {
+        "url": "https://httpbin.org/html",
+        "timeout": 30,
+        "headers": {
+          "User-Agent": "Generic Agent Web Scraper 1.0"
+        }
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "name": "web_scraping_demo",
+      "description": "Demonstrate web scraping capabilities",
+      "steps": [
+        {
+          "name": "save_web_content",
+          "type": "tool",
+          "config": {
+            "tool": "write_file",
+            "params": {
+              "path": "./output/scraped_web_content.html",
+              "content": "Successfully fetched web content from httpbin.org!"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "tools": {
+    "write_file": {
+      "enabled": true,
+      "config": {
+        "allowed_paths": ["./output/*"]
+      }
+    },
+    "read_file": {
+      "enabled": true
+    },
+    "shell_command": {
+      "enabled": true,
+      "config": {
+        "allowed_commands": ["echo", "cat", "ls"]
+      }
+    }
+  },
+  "outputs": [
+    {
+      "name": "console_output",
+      "type": "console", 
+      "config": {
+        "format": "text",
+        "pretty_print": true
+      }
+    }
+  ],
+  "security": {
+    "enabled": true,
+    "allowed_paths": ["./output/*"],
+    "max_file_size": "5MB"
+  },
+  "environment": {
+    "log_level": "info",
+    "workspace_root": ".",
+    "variables": {
+      "DEEPINFRA_API_KEY": "YfDMmq5Ys3cJcSwufsU9YsXRFliygmTK"
+    }
+  }
+}

@@ -1,0 +1,135 @@
+{
+  "agent": {
+    "name": "Live Web Data Scraper",
+    "description": "Real web scraper using ledit configuration and API keys",
+    "version": "1.0.0",
+    "max_iterations": 3,
+    "timeout": "120s"
+  },
+  "llm": {
+    "provider": "deepinfra",
+    "model": "google/gemini-2.5-flash",
+    "max_tokens": 4000,
+    "temperature": 0.1,
+    "system_prompt": "You are a precise data extraction specialist. Extract structured data from web content according to the provided JSON schema. Return only valid JSON that matches the schema exactly. If a field cannot be found, use null or appropriate default values. Be thorough but concise.",
+    "provider_config": {
+      "api_key": "{{DEEPINFRA_API_KEY}}"
+    }
+  },
+  "data_sources": [
+    {
+      "name": "web_content",
+      "type": "web",
+      "config": {
+        "url": "https://httpbin.org/html",
+        "timeout": 30,
+        "headers": {
+          "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+        },
+        "follow_redirects": true
+      }
+    },
+    {
+      "name": "target_schema",
+      "type": "file",
+      "config": {
+        "path": "examples/schemas/extraction_schema.json"
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "name": "live_web_scraping",
+      "description": "Live web content extraction with real LLM processing",
+      "steps": [
+        {
+          "name": "extract_html_data",
+          "type": "llm",
+          "config": {
+            "prompt": "You are a data extraction specialist. I will provide you with HTML content and a JSON schema. Extract structured data from the HTML according to the schema.\n\nJSON Schema to follow:\n{\n  \"article\": {\n    \"title\": \"string - main page title\",\n    \"content\": {\n      \"body_text\": \"string - main content text\"\n    },\n    \"source\": {\n      \"url\": \"string - source URL\",\n      \"domain\": \"string - domain name\"\n    }\n  },\n  \"extraction_metadata\": {\n    \"extracted_at\": \"ISO timestamp\",\n    \"confidence_score\": \"number 0.0-1.0\",\n    \"fields_extracted\": \"integer count\"\n  }\n}\n\nHTML Content from https://httpbin.org/html:\n\nPlease extract data according to the schema above. Return only valid JSON.",
+            "temperature": 0.1,
+            "max_tokens": 1000
+          },
+          "retry": {
+            "max_attempts": 3,
+            "backoff": "exponential"
+          }
+        },
+        {
+          "name": "save_results",
+          "type": "tool",
+          "depends_on": ["extract_html_data"],
+          "config": {
+            "tool": "file_writer",
+            "params": {
+              "path": "./output/live_extracted_data.json",
+              "content": "{{extract_html_data.output}}",
+              "format": "json"
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "tools": {
+    "web_fetch": {
+      "enabled": true,
+      "config": {
+        "max_response_size": 5242880,
+        "timeout": 30,
+        "user_agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
+      }
+    },
+    "json_processor": {
+      "enabled": true,
+      "config": {
+        "validate_schema": true,
+        "pretty_print": true
+      }
+    },
+    "file_writer": {
+      "enabled": true,
+      "config": {
+        "allowed_paths": ["./output/*"],
+        "create_directories": true
+      }
+    }
+  },
+  "outputs": [
+    {
+      "name": "console_output",
+      "type": "console",
+      "config": {
+        "format": "json",
+        "pretty_print": true,
+        "include_metadata": true
+      }
+    },
+    {
+      "name": "file_output",
+      "type": "file",
+      "config": {
+        "path": "./output/live_extracted_data.json",
+        "format": "json",
+        "pretty_print": true,
+        "create_path": true
+      }
+    }
+  ],
+  "security": {
+    "enabled": true,
+    "allowed_paths": ["./output/*", "./examples/*"],
+    "max_file_size": "10MB"
+  },
+  "environment": {
+    "log_level": "info",
+    "workspace_root": ".",
+    "variables": {
+      "DEEPINFRA_API_KEY": "YfDMmq5Ys3cJcSwufsU9YsXRFliygmTK"
+    },
+    "limits": {
+      "max_memory": "1GB",
+      "max_execution_time": "300s"
+    }
+  }
+}
