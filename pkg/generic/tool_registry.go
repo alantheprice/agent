@@ -1,6 +1,7 @@
 package generic
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -8,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // GenericTool represents a tool that can be executed by the agent
@@ -19,9 +21,10 @@ type GenericTool interface {
 
 // ToolRegistry manages available tools
 type ToolRegistry struct {
-	tools  map[string]GenericTool
-	config map[string]Tool
-	logger *slog.Logger
+	tools    map[string]GenericTool
+	config   map[string]Tool
+	security *Security
+	logger   *slog.Logger
 }
 
 // BuiltinTool represents a built-in tool implementation
@@ -32,11 +35,12 @@ type BuiltinTool struct {
 }
 
 // NewToolRegistry creates a new tool registry
-func NewToolRegistry(toolConfigs map[string]Tool, logger *slog.Logger) (*ToolRegistry, error) {
+func NewToolRegistry(toolConfigs map[string]Tool, security *Security, logger *slog.Logger) (*ToolRegistry, error) {
 	registry := &ToolRegistry{
-		tools:  make(map[string]GenericTool),
-		config: toolConfigs,
-		logger: logger,
+		tools:    make(map[string]GenericTool),
+		config:   toolConfigs,
+		security: security,
+		logger:   logger,
 	}
 
 	// Register built-in tools
@@ -91,6 +95,25 @@ func (tr *ToolRegistry) registerBuiltinTools() {
 		name:        "json_format",
 		description: "Format data as JSON",
 		executor:    tr.executeJSONFormat,
+	}
+
+	// Git operations
+	tr.tools["git_status"] = &BuiltinTool{
+		name:        "git_status",
+		description: "Get git repository status",
+		executor:    tr.executeGitStatus,
+	}
+
+	tr.tools["git_diff"] = &BuiltinTool{
+		name:        "git_diff",
+		description: "Get git diff for staged changes",
+		executor:    tr.executeGitDiff,
+	}
+
+	tr.tools["git_commit"] = &BuiltinTool{
+		name:        "git_commit",
+		description: "Execute git commit with message",
+		executor:    tr.executeGitCommit,
 	}
 }
 
@@ -264,10 +287,46 @@ func (tr *ToolRegistry) executeAskUser(ctx context.Context, params map[string]in
 		return nil, fmt.Errorf("question parameter is required and must be a string")
 	}
 
-	// TODO: Implement actual user interaction
-	// TODO: Add timeout handling
+	// Display the question to the user
+	fmt.Print(question + " ")
 
-	return fmt.Sprintf("User response to: %s", question), nil
+	// Read user input with timeout support
+	timeout := 300 * time.Second // Default 5 minutes
+	if timeoutParam, ok := params["timeout"].(float64); ok {
+		timeout = time.Duration(timeoutParam) * time.Second
+	}
+
+	// Create a channel to receive the user input
+	inputChan := make(chan string, 1)
+	errorChan := make(chan error, 1)
+
+	go func() {
+		scanner := bufio.NewScanner(os.Stdin)
+		if scanner.Scan() {
+			inputChan <- strings.TrimSpace(scanner.Text())
+		} else {
+			if err := scanner.Err(); err != nil {
+				errorChan <- err
+			} else {
+				errorChan <- fmt.Errorf("input stream closed")
+			}
+		}
+	}()
+
+	// Wait for input or timeout
+	select {
+	case input := <-inputChan:
+		return map[string]interface{}{
+			"response": input,
+			"success":  true,
+		}, nil
+	case err := <-errorChan:
+		return nil, fmt.Errorf("failed to read user input: %w", err)
+	case <-time.After(timeout):
+		return nil, fmt.Errorf("user input timeout after %v", timeout)
+	case <-ctx.Done():
+		return nil, fmt.Errorf("operation cancelled: %w", ctx.Err())
+	}
 }
 
 func (tr *ToolRegistry) executeJSONParse(ctx context.Context, params map[string]interface{}) (interface{}, error) {
@@ -344,4 +403,77 @@ func (tr *ToolRegistry) copyFile(src, dst string) error {
 	}
 
 	return nil
+}
+
+// Git tool implementations
+
+func (tr *ToolRegistry) executeGitStatus(ctx context.Context, params map[string]interface{}) (interface{}, error) {
+	// Execute git status command using shell_command
+	return tr.executeShellCommand(ctx, map[string]interface{}{
+		"command": "git status --porcelain",
+		"timeout": 30.0,
+	})
+}
+
+func (tr *ToolRegistry) executeGitDiff(ctx context.Context, params map[string]interface{}) (interface{}, error) {
+	// Default to staged changes, but allow customization
+	command := "git diff --staged"
+
+	if diffType, ok := params["type"].(string); ok {
+		switch diffType {
+		case "staged":
+			command = "git diff --staged"
+		case "unstaged":
+			command = "git diff"
+		case "all":
+			command = "git diff HEAD"
+		}
+	}
+
+	return tr.executeShellCommand(ctx, map[string]interface{}{
+		"command": command,
+		"timeout": 30.0,
+	})
+}
+
+func (tr *ToolRegistry) executeGitCommit(ctx context.Context, params map[string]interface{}) (interface{}, error) {
+	message, ok := params["message"].(string)
+	if !ok {
+		return nil, fmt.Errorf("message parameter is required and must be a string")
+	}
+
+	// Clean and validate the commit message
+	message = strings.TrimSpace(message)
+	if message == "" {
+		return nil, fmt.Errorf("commit message cannot be empty")
+	}
+
+	// Execute git commit using shell_command
+	command := fmt.Sprintf("git commit -m %q", message)
+
+	result, err := tr.executeShellCommand(ctx, map[string]interface{}{
+		"command": command,
+		"timeout": 30.0,
+	})
+
+	if err != nil {
+		return result, err
+	}
+
+	// If successful, also get the commit hash
+	hashResult, _ := tr.executeShellCommand(ctx, map[string]interface{}{
+		"command": "git rev-parse HEAD",
+		"timeout": 10.0,
+	})
+
+	// Enhance the result with commit hash if available
+	if resultMap, ok := result.(map[string]interface{}); ok {
+		if hashMap, ok := hashResult.(map[string]interface{}); ok {
+			if hashOutput, ok := hashMap["output"].(string); ok {
+				resultMap["commit_hash"] = strings.TrimSpace(hashOutput)
+			}
+		}
+	}
+
+	return result, nil
 }

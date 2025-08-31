@@ -77,21 +77,49 @@ git add <files>
 - 1MB max file size for analysis
 - Script execution with security validation
 
-## 🎭 Decision Options
+## 🎭 Interactive Decision Points
 
-### After Validation
-- **`c`** (continue) - Proceed despite any warnings
-- **`n`** (cancel) - Stop to address issues
+The workflow includes clear prompts at each decision point:
 
-### After Code Review  
-- **`c`** (continue) - Proceed to commit message
-- **`s`** (save) - Save feedback to file
-- **`n`** (cancel) - Stop the workflow
+### **1. After Staging Validation**
+```
+## Staging Validation Complete
+Please review the validation findings:
+- File count and sizes
+- Binary/generated file warnings  
+- Total diff size analysis
+- Overall validation status
 
-### After Commit Message
-- **`a`** (accept) - Execute commit  
-- **`r`** (revise) - Request new message
-- **`n`** (cancel) - Stop the workflow
+Options:
+- c (continue): Proceed with comprehensive code review
+- n (cancel): Stop the workflow to address issues first
+```
+
+### **2. After Code Review**  
+```
+## Code Review Complete
+I've completed thorough analysis including:
+- Overall goal and purpose assessment
+- File-by-file code quality review
+- LLM-generated code issue detection
+- Security and performance considerations
+
+Options:
+- c (continue): Proceed to commit message generation
+- s (save): Save review feedback to markdown file
+- n (cancel): Cancel the commit process
+```
+
+### **3. After Commit Message Generation**
+```
+## Proposed Commit Message
+Review the generated conventional commit message.
+
+Options:
+- a (accept): Accept the message and execute git commit
+- r (revise): Explain what should be different
+- n (cancel): Cancel the commit process
+```
 
 ## 🔧 Customization
 

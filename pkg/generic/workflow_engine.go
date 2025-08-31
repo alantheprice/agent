@@ -132,6 +132,8 @@ func (we *WorkflowEngine) executeStep(ctx context.Context, step Step, execCtx *E
 			output, err = we.executeToolStep(ctx, step, execCtx, previousResults)
 		case "llm":
 			output, err = we.executeLLMStep(ctx, step, execCtx, previousResults)
+		case "llm_display":
+			output, err = we.executeLLMDisplayStep(ctx, step, execCtx, previousResults)
 		case "script":
 			output, err = we.executeScriptStep(ctx, step, execCtx, previousResults)
 		case "condition":
@@ -210,6 +212,36 @@ func (we *WorkflowEngine) executeLLMStep(ctx context.Context, step Step, execCtx
 	return response.Content, nil
 }
 
+// executeLLMDisplayStep executes an LLM step and displays the output to the user
+func (we *WorkflowEngine) executeLLMDisplayStep(ctx context.Context, step Step, execCtx *ExecutionContext, previousResults map[string]*StepResult) (interface{}, error) {
+	prompt, ok := step.Config["prompt"].(string)
+	if !ok {
+		return nil, fmt.Errorf("prompt not specified in step config")
+	}
+
+	// TODO: Template rendering for prompt with context variables
+	// TODO: Add system prompt handling
+
+	response, err := we.llmClient.Complete(ctx, prompt)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update metrics
+	execCtx.Metrics.LLMTokensUsed += response.TokensUsed
+	execCtx.Metrics.LLMCost += response.Cost
+
+	// Display the LLM response to the user
+	fmt.Println("=== LLM ANALYSIS RESULTS ===")
+	fmt.Println()
+	fmt.Print(response.Content)
+	fmt.Println()
+	fmt.Println("=== END ANALYSIS RESULTS ===")
+	fmt.Println()
+
+	return response.Content, nil
+}
+
 // executeConditionStep executes a condition step
 func (we *WorkflowEngine) executeConditionStep(ctx context.Context, step Step, execCtx *ExecutionContext, previousResults map[string]*StepResult) (interface{}, error) {
 	// TODO: Implement condition evaluation
@@ -228,29 +260,61 @@ func (we *WorkflowEngine) executeParallelStep(ctx context.Context, step Step, ex
 	return "parallel execution completed", nil
 }
 
-// buildDependencyGraph builds a dependency graph for workflow steps
+// buildDependencyGraph builds a dependency graph for workflow steps using topological sorting
 func (we *WorkflowEngine) buildDependencyGraph(steps []Step) ([][]Step, error) {
-	// Simple implementation - in practice, this would do proper topological sorting
-	var graph [][]Step
-
-	// Group steps by their dependencies
-	independentSteps := make([]Step, 0)
-	dependentSteps := make([]Step, 0)
-
+	// Create a map for quick step lookup
+	stepMap := make(map[string]Step)
 	for _, step := range steps {
-		if len(step.DependsOn) == 0 {
-			independentSteps = append(independentSteps, step)
-		} else {
-			dependentSteps = append(dependentSteps, step)
+		stepMap[step.Name] = step
+	}
+
+	// Track in-degree (number of dependencies) for each step
+	inDegree := make(map[string]int)
+	for _, step := range steps {
+		inDegree[step.Name] = len(step.DependsOn)
+	}
+
+	var graph [][]Step
+	remaining := make(map[string]Step)
+	for _, step := range steps {
+		remaining[step.Name] = step
+	}
+
+	// Process steps in dependency order
+	for len(remaining) > 0 {
+		// Find steps with no remaining dependencies
+		currentLevel := make([]Step, 0)
+		for name, step := range remaining {
+			if inDegree[name] == 0 {
+				currentLevel = append(currentLevel, step)
+			}
 		}
-	}
 
-	if len(independentSteps) > 0 {
-		graph = append(graph, independentSteps)
-	}
+		// If no steps can be processed, we have a circular dependency
+		if len(currentLevel) == 0 {
+			remainingNames := make([]string, 0, len(remaining))
+			for name := range remaining {
+				remainingNames = append(remainingNames, name)
+			}
+			return nil, fmt.Errorf("circular dependency detected among steps: %v", remainingNames)
+		}
 
-	if len(dependentSteps) > 0 {
-		graph = append(graph, dependentSteps)
+		// Remove processed steps and update dependencies
+		for _, step := range currentLevel {
+			delete(remaining, step.Name)
+
+			// Reduce in-degree for steps that depend on this one
+			for otherName := range remaining {
+				otherStep := remaining[otherName]
+				for _, dep := range otherStep.DependsOn {
+					if dep == step.Name {
+						inDegree[otherName]--
+					}
+				}
+			}
+		}
+
+		graph = append(graph, currentLevel)
 	}
 
 	return graph, nil

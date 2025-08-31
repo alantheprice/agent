@@ -25,8 +25,8 @@
     "interactive": true
   },
   "llm": {
-    "provider": "anthropic",
-    "model": "claude-3-sonnet-20240229",
+    "provider": "deepinfra",
+    "model": "deepseek-ai/DeepSeek-V3.1",
     "temperature": 0.3,
     "max_tokens": 4000,
     "system_prompt": "You are an expert software engineer and code reviewer specializing in detecting issues common in LLM-generated code. Your expertise includes:\n\n1. **Goal Inference**: Understanding the purpose and intent behind code changes\n2. **LLM Code Issues**: Identifying over-engineering, generic naming, incomplete implementations, and other AI-generated code problems\n3. **Code Quality**: Analyzing best practices, maintainability, and architectural soundness\n4. **Security & Performance**: Detecting vulnerabilities and performance bottlenecks\n5. **Conventional Commits**: Generating clear, well-structured commit messages\n\nBe thorough, specific, and actionable in your feedback. Focus on both immediate issues and long-term maintainability."
@@ -63,84 +63,128 @@
       "description": "Complete git workflow: validation → thorough review → commit message generation",
       "steps": [
         {
-          "name": "run_validation_script",
-          "type": "script",
+          "name": "welcome_and_validation",
+          "type": "tool",
           "config": {
-            "script": "./examples/git_workflow/validate_staging.sh",
-            "source": "config"
+            "tool": "ask_user",
+            "params": {
+              "question": "# Git Workflow Assistant\n\nWelcome! I'm your AI Git Workflow Assistant. I will help you create high-quality commits through:\n\n📋 **1. Staging Validation** - Check file sizes, types, and overall staging health\n🔍 **2. Goal Inference** - Understand what your changes are trying to achieve\n📝 **3. Code Review** - Thorough analysis including LLM-generated code issues\n💬 **4. Interactive Decisions** - You control the workflow at key points\n📄 **5. Commit Message** - Generate conventional commit messages\n✅ **6. Final Commit** - Execute with your approval\n\n## Ready to Start?\n\n**Options:**\n- **y** - Begin staging validation and code review\n- **n** - Exit workflow\n\n**Please type 'y' or 'n':**"
+            }
           },
-          "prompt": "Execute the staging validation script to check for issues with the staged files. This will analyze file sizes, types, and overall staging health.",
-          "timeout": "60s",
-          "retry_count": 0
-        },
-        {
-          "name": "validation_user_decision",
-          "prompt": "Review the validation script output above. The script has analyzed your staged files for potential issues.\n\nBased on the validation results, would you like to:\n- **continue** (c): Proceed with code review despite any warnings\n- **cancel** (n): Stop the workflow to address issues\n\nPlease respond with 'c' to continue or 'n' to cancel.",
-          "depends_on": ["run_validation_script"],
           "timeout": "300s"
         },
+
+
         {
           "name": "get_staged_changes",
-          "prompt": "Use the git_diff tool to get the full staged changes. We need the complete diff to understand what's being committed.",
-          "depends_on": ["validation_user_decision"],
-          "timeout": "30s",
-          "retry_count": 0
+          "type": "tool",
+          "config": {
+            "tool": "shell_command",
+            "params": {
+              "command": "git diff --staged --name-status",
+              "timeout": 30
+            }
+          },
+          "depends_on": ["welcome_and_validation"],
+          "timeout": "60s"
         },
         {
           "name": "infer_change_goals",
-          "prompt": "First, analyze the full set of staged changes to understand the overall goal and purpose of this commit. Look at:\n\n1. **What is the main objective?** (feature, fix, refactor, etc.)\n2. **What problem is being solved?**\n3. **How do the files work together?**\n4. **What is the scope and impact?**\n\nProvide a clear, concise summary of what this commit is trying to achieve based on the code changes.",
+          "type": "llm",
+          "config": {
+            "prompt": "First, analyze the full set of staged changes to understand the overall goal and purpose of this commit. Look at:\n\n1. **What is the main objective?** (feature, fix, refactor, etc.)\n2. **What problem is being solved?**\n3. **How do the files work together?**\n4. **What is the scope and impact?**\n\nProvide a clear, concise summary of what this commit is trying to achieve based on the code changes."
+          },
           "depends_on": ["get_staged_changes"],
-          "timeout": "2m",
-          "retry_count": 1
+          "timeout": "2m"
         },
         {
           "name": "thorough_code_review",
-          "prompt": "Now perform a thorough file-by-file code review. For each changed file, analyze:\n\n**Code Quality & Best Practices:**\n- Naming conventions and code organization\n- Function/method design and single responsibility\n- Error handling and edge cases\n- Code readability and maintainability\n\n**LLM Code Generation Issues (specifically look for):**\n- Over-complicated or verbose implementations\n- Unnecessary abstractions or patterns\n- Missing or inadequate error handling\n- Generic variable/function names\n- Incomplete implementations or TODOs\n- Copy-paste patterns without customization\n- Missing input validation\n- Hardcoded values that should be configurable\n\n**Security & Performance:**\n- Potential security vulnerabilities\n- Performance bottlenecks or inefficiencies\n- Resource management (memory, connections, etc.)\n\n**Testing & Documentation:**\n- Missing tests for new functionality\n- Insufficient documentation or comments\n- Breaking changes that need migration notes\n\nProvide specific, actionable feedback with line references where applicable.",
+          "type": "llm_display",
+          "config": {
+            "prompt": "Now perform a thorough file-by-file code review. For each changed file, analyze:\n\n**Code Quality & Best Practices:**\n- Naming conventions and code organization\n- Function/method design and single responsibility\n- Error handling and edge cases\n- Code readability and maintainability\n\n**LLM Code Generation Issues (specifically look for):**\n- Over-complicated or verbose implementations\n- Unnecessary abstractions or patterns\n- Missing or inadequate error handling\n- Generic variable/function names\n- Incomplete implementations or TODOs\n- Copy-paste patterns without customization\n- Missing input validation\n- Hardcoded values that should be configurable\n\n**Security & Performance:**\n- Potential security vulnerabilities\n- Performance bottlenecks or inefficiencies\n- Resource management (memory, connections, etc.)\n\n**Testing & Documentation:**\n- Missing tests for new functionality\n- Insufficient documentation or comments\n- Breaking changes that need migration notes\n\nProvide specific, actionable feedback with line references where applicable."
+          },
           "depends_on": ["infer_change_goals"],
-          "timeout": "5m",
-          "retry_count": 1
+          "timeout": "5m"
         },
+
         {
           "name": "review_user_decision",
-          "prompt": "## Code Review Complete\n\nBased on the analysis above, you have the following options:\n\n- **continue** (c): Proceed to commit message generation\n- **save** (s): Save the review feedback to a file for later reference\n- **cancel** (n): Cancel the commit process\n\nWhat would you like to do? Please respond with 'c', 's', or 'n'.",
+          "type": "tool",
+          "config": {
+            "tool": "ask_user",
+            "params": {
+              "question": "## Code Review Complete\n\nI've completed a thorough analysis of your staged changes as shown above.\n\n**What would you like to do next?**\n\n**Options:**\n- **y** - Proceed to commit message generation\n- **r** - Save the review feedback to a markdown file for later reference\n- **n** - Cancel the commit process to address issues first\n\n**Please type 'y', 'r', or 'n':**"
+            }
+          },
           "depends_on": ["thorough_code_review"],
           "timeout": "300s"
         },
         {
           "name": "save_review_feedback",
-          "prompt": "Save the code review feedback to a file named 'code-review-feedback-[timestamp].md' in the current directory. Include the change goals analysis and the detailed review findings in a well-formatted markdown document.",
+          "type": "tool",
+          "config": {
+            "tool": "write_file",
+            "params": {
+              "path": "code-review-feedback.md",
+              "content": "# Code Review Feedback\n\n## Goal Analysis\nThe LLM has analyzed your code changes to understand the overall goal and purpose.\n\n## Code Quality Review\nFile-by-file analysis has been completed covering naming conventions, design patterns, error handling, and maintainability.\n\n## Security & Performance Analysis\nAnalysis completed for potential vulnerabilities, bottlenecks, and resource management.\n\n## Recommendations\nPlease refer to the detailed LLM analysis output above for specific recommendations and actionable feedback."
+            }
+          },
           "depends_on": ["review_user_decision"],
           "timeout": "30s"
         },
         {
           "name": "generate_commit_message",
-          "prompt": "Based on the inferred goals and code review, generate a high-quality conventional commit message.\n\nFormat:\n```\ntype(scope): brief description (≤50 chars)\n\n- Detailed explanation of changes\n- Why these changes were made\n- Impact or benefits\n- Any breaking changes or migration notes\n```\n\nCommon types: feat, fix, docs, style, refactor, test, chore, perf, ci, build\n\nEnsure the message accurately reflects the goals identified earlier and addresses the main purpose of the changes.",
+          "type": "llm_display",
+          "config": {
+            "prompt": "Based on the inferred goals and code review, generate a high-quality conventional commit message.\n\nFormat:\n```\ntype(scope): brief description (≤50 chars)\n\n- Detailed explanation of changes\n- Why these changes were made\n- Impact or benefits\n- Any breaking changes or migration notes\n```\n\nCommon types: feat, fix, docs, style, refactor, test, chore, perf, ci, build\n\nEnsure the message accurately reflects the goals identified earlier and addresses the main purpose of the changes."
+          },
           "depends_on": ["review_user_decision"],
           "timeout": "2m",
           "retry_count": 1
         },
         {
           "name": "commit_message_user_decision",
-          "prompt": "## Proposed Commit Message\n\nReview the commit message above. You can:\n\n- **accept** (a): Accept the message and execute the commit\n- **revise** (r): Explain what should be different and I'll generate a new message\n- **cancel** (n): Cancel the commit process\n\nWhat would you like to do? Please respond with 'a', 'r', or 'n'.",
+          "type": "tool",
+          "config": {
+            "tool": "ask_user",
+            "params": {
+              "question": "## Proposed Commit Message\n\nI've generated a conventional commit message based on the code analysis above. Please review the proposed message.\n\n**What would you like to do?**\n\n**Options:**\n- **y** - Accept the message and execute the git commit\n- **r** - Explain what should be different and I'll generate a new message\n- **n** - Cancel the commit process\n\n**Please type 'y', 'r', or 'n':**"
+            }
+          },
           "depends_on": ["generate_commit_message"],
           "timeout": "300s"
         },
         {
           "name": "get_revision_feedback",
-          "prompt": "Please explain what should be different about the commit message. For example:\n- Different type or scope\n- Different emphasis in the description\n- Missing details in the body\n- Different tone or style\n\nI'll use your feedback to generate an improved version.",
+          "type": "tool",
+          "config": {
+            "tool": "ask_user",
+            "params": {
+              "question": "Please explain what should be different about the commit message. For example:\n- Different type or scope\n- Different emphasis in the description\n- Missing details in the body\n- Different tone or style\n\nI'll use your feedback to generate an improved version."
+            }
+          },
           "depends_on": ["commit_message_user_decision"],
           "timeout": "180s"
         },
         {
           "name": "regenerate_commit_message",
-          "prompt": "Based on the user's feedback, generate an improved commit message that addresses their concerns while maintaining conventional commit format and quality standards.",
+          "type": "llm",
+          "config": {
+            "prompt": "Based on the user's feedback, generate an improved commit message that addresses their concerns while maintaining conventional commit format and quality standards."
+          },
           "depends_on": ["get_revision_feedback"],
           "timeout": "2m",
           "retry_count": 1
         },
         {
           "name": "execute_commit",
-          "prompt": "Execute the git commit with the approved message. Use the git_commit tool to create the commit and provide confirmation of successful completion including the commit hash.",
+          "type": "tool",
+          "config": {
+            "tool": "git_commit",
+            "params": {
+              "message": "Execute the git commit with the approved message. Use the git_commit tool to create the commit and provide confirmation of successful completion including the commit hash."
+            }
+          },
           "depends_on": ["commit_message_user_decision"],
           "timeout": "30s"
         }
@@ -203,6 +247,7 @@
   },
   "security": {
     "allowed_paths": [".git/", "./"],
+    "allowed_commands": ["bash", "git", "ls", "cat"],
     "max_file_size": "1MB"
   }
 }

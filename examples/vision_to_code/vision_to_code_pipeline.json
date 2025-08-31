@@ -1,0 +1,61 @@
+{
+  "multi_agent": {
+    "name": "Vision to Code Pipeline",
+    "description": "Multi-agent pipeline that transforms design screenshots into working code using Frontend Vision Analyzer and Code Implementer",
+    "version": "1.0.0",
+    "agents": [
+      {
+        "id": "vision_analyzer",
+        "name": "Frontend Vision Analyzer", 
+        "config_path": "./examples/configs/frontend_vision_analyzer.json",
+        "dependencies": [],
+        "inputs": {
+          "screenshot_url": "${global.screenshot_url}",
+          "project_context": "${global.project_context}"
+        },
+        "outputs": ["technical_specifications", "css_implementation_starter"]
+      },
+      {
+        "id": "code_implementer",
+        "name": "Code Implementer",
+        "config_path": "./examples/configs/code_implementer.json", 
+        "dependencies": ["vision_analyzer"],
+        "inputs": {
+          "technical_specs": "${vision_analyzer.technical_specifications}",
+          "css_starter": "${vision_analyzer.css_implementation_starter}",
+          "framework_preference": "${global.framework_preference}",
+          "output_directory": "${global.output_directory}"
+        },
+        "outputs": ["html_implementation", "css_implementation", "javascript_implementation", "component_implementations"]
+      }
+    ],
+    "execution": {
+      "mode": "sequential",
+      "timeout_minutes": 20,
+      "retry_attempts": 2,
+      "error_handling": "stop_on_error"
+    },
+    "global_inputs": {
+      "screenshot_url": {
+        "type": "string",
+        "description": "URL or path to design screenshot",
+        "required": true
+      },
+      "project_context": {
+        "type": "string",
+        "description": "Project context and requirements",
+        "default": "Modern web application"
+      },
+      "framework_preference": {
+        "type": "string", 
+        "description": "Frontend framework preference",
+        "default": "React"
+      },
+      "output_directory": {
+        "type": "string",
+        "description": "Output directory for generated code",
+        "default": "./generated_code"
+      }
+    }
+  }
+}

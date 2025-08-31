@@ -42,6 +42,7 @@ type LLMConfig struct {
 	SystemPrompt      string                 `json:"system_prompt,omitempty"`
 	SpecializedModels map[string]string      `json:"specialized_models,omitempty"`
 	ProviderConfig    map[string]interface{} `json:"provider_config,omitempty"`
+	APIKey            string                 `json:"api_key,omitempty"` // Can be set directly or via environment variable
 }
 
 // DataSource defines a data ingestion source

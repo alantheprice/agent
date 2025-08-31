@@ -68,7 +68,7 @@ func NewAgent(config *AgentConfig, logger *slog.Logger) (*Agent, error) {
 	}
 
 	// Tool registry
-	agent.toolRegistry, err = NewToolRegistry(config.Tools, logger)
+	agent.toolRegistry, err = NewToolRegistry(config.Tools, &config.Security, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create tool registry: %w", err)
 	}
