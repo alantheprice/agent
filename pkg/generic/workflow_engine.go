@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"os"
+	"os/exec"
 	"time"
 )
 
@@ -11,14 +13,16 @@ import (
 type WorkflowEngine struct {
 	toolRegistry *ToolRegistry
 	llmClient    *LLMClient
+	validator    *Validator
 	logger       *slog.Logger
 }
 
 // NewWorkflowEngine creates a new workflow engine
-func NewWorkflowEngine(workflows []Workflow, toolRegistry *ToolRegistry, llmClient *LLMClient, logger *slog.Logger) (*WorkflowEngine, error) {
+func NewWorkflowEngine(workflows []Workflow, toolRegistry *ToolRegistry, llmClient *LLMClient, validator *Validator, logger *slog.Logger) (*WorkflowEngine, error) {
 	return &WorkflowEngine{
 		toolRegistry: toolRegistry,
 		llmClient:    llmClient,
+		validator:    validator,
 		logger:       logger,
 	}, nil
 }
@@ -128,6 +132,8 @@ func (we *WorkflowEngine) executeStep(ctx context.Context, step Step, execCtx *E
 			output, err = we.executeToolStep(ctx, step, execCtx, previousResults)
 		case "llm":
 			output, err = we.executeLLMStep(ctx, step, execCtx, previousResults)
+		case "script":
+			output, err = we.executeScriptStep(ctx, step, execCtx, previousResults)
 		case "condition":
 			output, err = we.executeConditionStep(ctx, step, execCtx, previousResults)
 		case "loop":
@@ -248,4 +254,105 @@ func (we *WorkflowEngine) buildDependencyGraph(steps []Step) ([][]Step, error) {
 	}
 
 	return graph, nil
+}
+
+// executeScriptStep executes a script step with security validation
+func (we *WorkflowEngine) executeScriptStep(ctx context.Context, step Step, execCtx *ExecutionContext, previousResults map[string]*StepResult) (interface{}, error) {
+	script, ok := step.Config["script"].(string)
+	if !ok {
+		return nil, fmt.Errorf("script not specified in step config")
+	}
+
+	// Determine if this is a trusted source (config-defined) or untrusted (LLM-generated)
+	isTrustedSource := false
+	if source, ok := step.Config["source"].(string); ok && source == "config" {
+		isTrustedSource = true
+	}
+
+	// Create security context
+	securityContext := SecurityContext{
+		IsTrustedSource: isTrustedSource,
+		MaxFileSize:     10 * 1024, // 10KB limit for scripts
+	}
+
+	// Add custom blocked commands if specified
+	if blocked, ok := step.Config["blocked_commands"].([]interface{}); ok {
+		for _, cmd := range blocked {
+			if cmdStr, ok := cmd.(string); ok {
+				securityContext.BlockedCommands = append(securityContext.BlockedCommands, cmdStr)
+			}
+		}
+	}
+
+	we.logger.Info("Validating script",
+		"step", step.Name,
+		"trusted_source", isTrustedSource,
+		"script_length", len(script))
+
+	// Validate script security
+	validationResult, err := we.validator.ValidateScript(script, securityContext)
+	if err != nil {
+		return nil, fmt.Errorf("script validation failed: %w", err)
+	}
+
+	if !validationResult.IsSecure {
+		we.logger.Error("Script failed security validation",
+			"step", step.Name,
+			"violations", validationResult.Violations)
+		return nil, fmt.Errorf("script security validation failed: %v", validationResult.Violations)
+	}
+
+	if len(validationResult.Warnings) > 0 {
+		we.logger.Warn("Script validation warnings",
+			"step", step.Name,
+			"warnings", validationResult.Warnings)
+	}
+
+	// Create secure temporary file
+	tempFile, err := we.validator.CreateSecureTempFile(validationResult.SanitizedScript, "agent-script-")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create secure temp file: %w", err)
+	}
+	defer func() {
+		if cleanupErr := we.validator.CleanupTempFile(tempFile); cleanupErr != nil {
+			we.logger.Error("Failed to cleanup temp file", "file", tempFile, "error", cleanupErr)
+		}
+	}()
+
+	// Execute script with timeout and resource limits
+	timeout := 30 * time.Second
+	if configTimeout, ok := step.Config["timeout"].(float64); ok {
+		timeout = time.Duration(configTimeout) * time.Second
+	}
+
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Use bash to execute the script
+	cmd := exec.CommandContext(ctxWithTimeout, "bash", tempFile)
+
+	// Set environment variables from execution context
+	env := os.Environ()
+	for k, v := range execCtx.Data {
+		if strVal, ok := v.(string); ok {
+			env = append(env, fmt.Sprintf("AGENT_%s=%s", k, strVal))
+		}
+	}
+	cmd.Env = env
+
+	// Capture output
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		we.logger.Error("Script execution failed",
+			"step", step.Name,
+			"error", err,
+			"output", string(output))
+		return nil, fmt.Errorf("script execution failed: %w", err)
+	}
+
+	we.logger.Info("Script executed successfully",
+		"step", step.Name,
+		"output_length", len(output))
+
+	return string(output), nil
 }

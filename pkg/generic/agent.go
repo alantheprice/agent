@@ -79,8 +79,14 @@ func NewAgent(config *AgentConfig, logger *slog.Logger) (*Agent, error) {
 		return nil, fmt.Errorf("failed to create LLM client: %w", err)
 	}
 
+	// Validator (create before workflow engine as it's needed)
+	agent.validator, err = NewValidator(config.Validation, logger)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create validator: %w", err)
+	}
+
 	// Workflow engine
-	agent.workflow, err = NewWorkflowEngine(config.Workflows, agent.toolRegistry, agent.llmClient, logger)
+	agent.workflow, err = NewWorkflowEngine(config.Workflows, agent.toolRegistry, agent.llmClient, agent.validator, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create workflow engine: %w", err)
 	}
@@ -89,12 +95,6 @@ func NewAgent(config *AgentConfig, logger *slog.Logger) (*Agent, error) {
 	agent.outputWriter, err = NewOutputWriter(config.Outputs, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create output writer: %w", err)
-	}
-
-	// Validator
-	agent.validator, err = NewValidator(config.Validation, logger)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create validator: %w", err)
 	}
 
 	return agent, nil

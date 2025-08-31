@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"os"
 	"regexp"
+	"strings"
 )
 
 // Validator validates agent output
@@ -255,4 +257,291 @@ func getDataType(data interface{}) string {
 	default:
 		return "unknown"
 	}
+}
+
+// SecurityContext represents the security context for script validation
+type SecurityContext struct {
+	IsTrustedSource bool
+	AllowedCommands []string
+	BlockedCommands []string
+	MaxFileSize     int64
+}
+
+// ScriptValidationResult represents the result of script security validation
+type ScriptValidationResult struct {
+	IsSecure        bool
+	Violations      []string
+	Warnings        []string
+	SanitizedScript string
+}
+
+// ValidateScript performs comprehensive security validation on scripts
+func (v *Validator) ValidateScript(script string, context SecurityContext) (*ScriptValidationResult, error) {
+	result := &ScriptValidationResult{
+		IsSecure:        true,
+		Violations:      []string{},
+		Warnings:        []string{},
+		SanitizedScript: script,
+	}
+
+	// Skip strict validation for trusted sources, but still run basic checks
+	if context.IsTrustedSource {
+		v.logger.Info("Validating script from trusted source")
+		return v.validateTrustedScript(script, context, result)
+	}
+
+	v.logger.Info("Validating script from untrusted source with strict security")
+	return v.validateUntrustedScript(script, context, result)
+}
+
+// validateTrustedScript performs basic validation on trusted scripts
+func (v *Validator) validateTrustedScript(script string, context SecurityContext, result *ScriptValidationResult) (*ScriptValidationResult, error) {
+	lines := strings.Split(script, "\n")
+
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Check for extremely dangerous commands even in trusted scripts
+		if v.containsExtremelyDangerousCommand(line) {
+			result.IsSecure = false
+			result.Violations = append(result.Violations,
+				fmt.Sprintf("Line %d: Extremely dangerous command detected: %s", i+1, line))
+		}
+
+		// Check for potential security issues and warn (but don't fail for trusted sources)
+		if v.containsPotentiallyDangerousCommand(line) {
+			result.Warnings = append(result.Warnings,
+				fmt.Sprintf("Line %d: Potentially dangerous command: %s", i+1, line))
+		}
+	}
+
+	return result, nil
+}
+
+// validateUntrustedScript performs strict validation on untrusted scripts
+func (v *Validator) validateUntrustedScript(script string, context SecurityContext, result *ScriptValidationResult) (*ScriptValidationResult, error) {
+	lines := strings.Split(script, "\n")
+
+	for i, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Check for dangerous commands
+		if v.containsDangerousCommand(line) {
+			result.IsSecure = false
+			result.Violations = append(result.Violations,
+				fmt.Sprintf("Line %d: Dangerous command detected: %s", i+1, line))
+		}
+
+		// Check for path traversal attempts
+		if v.containsPathTraversal(line) {
+			result.IsSecure = false
+			result.Violations = append(result.Violations,
+				fmt.Sprintf("Line %d: Path traversal detected: %s", i+1, line))
+		}
+
+		// Check for network operations
+		if v.containsNetworkOperation(line) {
+			result.IsSecure = false
+			result.Violations = append(result.Violations,
+				fmt.Sprintf("Line %d: Network operation detected: %s", i+1, line))
+		}
+
+		// Check for system modifications
+		if v.containsSystemModification(line) {
+			result.IsSecure = false
+			result.Violations = append(result.Violations,
+				fmt.Sprintf("Line %d: System modification detected: %s", i+1, line))
+		}
+
+		// Check against custom blocked commands
+		if v.containsBlockedCommand(line, context.BlockedCommands) {
+			result.IsSecure = false
+			result.Violations = append(result.Violations,
+				fmt.Sprintf("Line %d: Blocked command detected: %s", i+1, line))
+		}
+	}
+
+	// Additional checks for file size limits
+	if context.MaxFileSize > 0 && int64(len(script)) > context.MaxFileSize {
+		result.IsSecure = false
+		result.Violations = append(result.Violations,
+			fmt.Sprintf("Script exceeds maximum allowed size of %d bytes", context.MaxFileSize))
+	}
+
+	return result, nil
+}
+
+// containsExtremelyDangerousCommand checks for commands that should never be allowed
+func (v *Validator) containsExtremelyDangerousCommand(line string) bool {
+	extremelyDangerous := []string{
+		"rm -rf /",
+		"rm -rf /*",
+		"dd if=/dev/zero of=/dev/",
+		"mkfs.",
+		"fdisk",
+		":(){ :|:& };:", // Fork bomb
+		"> /dev/",       // Direct device writes
+	}
+
+	lowerLine := strings.ToLower(line)
+	for _, cmd := range extremelyDangerous {
+		if strings.Contains(lowerLine, strings.ToLower(cmd)) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsPotentiallyDangerousCommand checks for commands that might be risky
+func (v *Validator) containsPotentiallyDangerousCommand(line string) bool {
+	potentiallyDangerous := []string{
+		"rm ", "sudo ", "chmod ", "chown ", "mv ", "cp /",
+	}
+
+	lowerLine := strings.ToLower(line)
+	for _, cmd := range potentiallyDangerous {
+		if strings.Contains(lowerLine, strings.ToLower(cmd)) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsDangerousCommand checks for dangerous commands in untrusted scripts
+func (v *Validator) containsDangerousCommand(line string) bool {
+	dangerous := []string{
+		"rm ", "sudo ", "su ", "chmod ", "chown ", "passwd ",
+		"useradd ", "userdel ", "groupadd ", "groupdel ",
+		"mount ", "umount ", "fdisk ", "mkfs.", "fsck",
+		"iptables ", "ufw ", "firewall-cmd ",
+		"crontab ", "systemctl ", "service ",
+		"kill ", "killall ", "pkill ",
+		"eval ", "exec ", "source ", ". ",
+		"curl ", "wget ", "nc ", "netcat ", "telnet ",
+		"ssh ", "scp ", "rsync ", "ftp ", "sftp ",
+	}
+
+	lowerLine := strings.ToLower(line)
+	for _, cmd := range dangerous {
+		if strings.Contains(lowerLine, strings.ToLower(cmd)) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsPathTraversal checks for path traversal attempts
+func (v *Validator) containsPathTraversal(line string) bool {
+	patterns := []string{
+		"../",
+		"..\\",
+		"/etc/",
+		"/proc/",
+		"/sys/",
+		"/dev/",
+		"/root/",
+		"/boot/",
+	}
+
+	lowerLine := strings.ToLower(line)
+	for _, pattern := range patterns {
+		if strings.Contains(lowerLine, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsNetworkOperation checks for network-related operations
+func (v *Validator) containsNetworkOperation(line string) bool {
+	networkOps := []string{
+		"curl ", "wget ", "nc ", "netcat ", "telnet ",
+		"ssh ", "scp ", "rsync ", "ftp ", "sftp ",
+		"ping ", "nmap ", "netstat ", "ss ",
+	}
+
+	lowerLine := strings.ToLower(line)
+	for _, op := range networkOps {
+		if strings.Contains(lowerLine, strings.ToLower(op)) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsSystemModification checks for system modification commands
+func (v *Validator) containsSystemModification(line string) bool {
+	systemMods := []string{
+		"systemctl ", "service ", "crontab ",
+		"mount ", "umount ", "swapon ", "swapoff ",
+		"modprobe ", "insmod ", "rmmod ",
+		"iptables ", "ufw ", "firewall-cmd ",
+	}
+
+	lowerLine := strings.ToLower(line)
+	for _, mod := range systemMods {
+		if strings.Contains(lowerLine, strings.ToLower(mod)) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsBlockedCommand checks against custom blocked commands
+func (v *Validator) containsBlockedCommand(line string, blockedCommands []string) bool {
+	if len(blockedCommands) == 0 {
+		return false
+	}
+
+	lowerLine := strings.ToLower(line)
+	for _, blocked := range blockedCommands {
+		if strings.Contains(lowerLine, strings.ToLower(blocked)) {
+			return true
+		}
+	}
+	return false
+}
+
+// CreateSecureTempFile creates a temporary file with secure permissions
+func (v *Validator) CreateSecureTempFile(content, prefix string) (string, error) {
+	// Create temp file with secure permissions (600 - owner read/write only)
+	tempFile, err := os.CreateTemp("", prefix+"*.sh")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temp file: %w", err)
+	}
+	defer tempFile.Close()
+
+	// Set secure permissions
+	if err := os.Chmod(tempFile.Name(), 0600); err != nil {
+		os.Remove(tempFile.Name())
+		return "", fmt.Errorf("failed to set secure permissions: %w", err)
+	}
+
+	// Write content
+	if _, err := tempFile.WriteString(content); err != nil {
+		os.Remove(tempFile.Name())
+		return "", fmt.Errorf("failed to write content: %w", err)
+	}
+
+	return tempFile.Name(), nil
+}
+
+// CleanupTempFile safely removes a temporary file
+func (v *Validator) CleanupTempFile(filepath string) error {
+	if filepath == "" {
+		return nil
+	}
+
+	// Verify it's actually a temp file before removing
+	if !strings.Contains(filepath, os.TempDir()) {
+		return fmt.Errorf("refusing to delete non-temp file: %s", filepath)
+	}
+
+	return os.Remove(filepath)
 }
