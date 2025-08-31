@@ -110,16 +110,14 @@
           "name": "save_review_feedback",
           "prompt": "Save the code review feedback to a file named 'code-review-feedback-[timestamp].md' in the current directory. Include the change goals analysis and the detailed review findings in a well-formatted markdown document.",
           "depends_on": ["review_user_decision"],
-          "timeout": "30s",
-          "condition": "user_input == 's'"
+          "timeout": "30s"
         },
         {
           "name": "generate_commit_message",
           "prompt": "Based on the inferred goals and code review, generate a high-quality conventional commit message.\n\nFormat:\n```\ntype(scope): brief description (≤50 chars)\n\n- Detailed explanation of changes\n- Why these changes were made\n- Impact or benefits\n- Any breaking changes or migration notes\n```\n\nCommon types: feat, fix, docs, style, refactor, test, chore, perf, ci, build\n\nEnsure the message accurately reflects the goals identified earlier and addresses the main purpose of the changes.",
           "depends_on": ["review_user_decision"],
           "timeout": "2m",
-          "retry_count": 1,
-          "condition": "user_input == 'c'"
+          "retry_count": 1
         },
         {
           "name": "commit_message_user_decision",
@@ -131,8 +129,7 @@
           "name": "get_revision_feedback",
           "prompt": "Please explain what should be different about the commit message. For example:\n- Different type or scope\n- Different emphasis in the description\n- Missing details in the body\n- Different tone or style\n\nI'll use your feedback to generate an improved version.",
           "depends_on": ["commit_message_user_decision"],
-          "timeout": "180s",
-          "condition": "user_input == 'r'"
+          "timeout": "180s"
         },
         {
           "name": "regenerate_commit_message",
@@ -145,8 +142,7 @@
           "name": "execute_commit",
           "prompt": "Execute the git commit with the approved message. Use the git_commit tool to create the commit and provide confirmation of successful completion including the commit hash.",
           "depends_on": ["commit_message_user_decision"],
-          "timeout": "30s",
-          "condition": "user_input == 'a'"
+          "timeout": "30s"
         }
       ]
     }

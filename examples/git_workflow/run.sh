@@ -41,4 +41,4 @@ echo "🔧 Running Git Workflow Assistant..."
 echo
 
 cd "$PROJECT_DIR"
-exec ./agent-template run "$CONFIG_FILE" "$@"
+exec ./bin/agent-template run --config "$CONFIG_FILE" "$@"
