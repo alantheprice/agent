@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alantheprice/ledit/pkg/config"
-	"github.com/alantheprice/ledit/pkg/orchestration/types"
-	"github.com/alantheprice/ledit/pkg/utils"
+	"github.com/alantheprice/agent-template/pkg/config"
+	"github.com/alantheprice/agent-template/pkg/orchestration/types"
+	"github.com/alantheprice/agent-template/pkg/utils"
 )
 
 // MultiAgentOrchestrator manages the execution of multiple agents with different personas

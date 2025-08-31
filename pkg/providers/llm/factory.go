@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/alantheprice/ledit/pkg/interfaces"
-	"github.com/alantheprice/ledit/pkg/interfaces/types"
+	"github.com/alantheprice/agent-template/pkg/interfaces"
+	"github.com/alantheprice/agent-template/pkg/interfaces/types"
 )
 
 // Factory provides convenient methods for creating providers

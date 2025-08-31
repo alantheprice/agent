@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/alantheprice/ledit/pkg/orchestration/types"
+	"github.com/alantheprice/agent-template/pkg/orchestration/types"
 )
 
 // ProcessLoader handles loading and validating process files

@@ -3,7 +3,7 @@ package orchestration
 import (
 	"fmt"
 
-	"github.com/alantheprice/ledit/pkg/orchestration/types"
+	"github.com/alantheprice/agent-template/pkg/orchestration/types"
 )
 
 // buildStepDependencies creates a dependency graph from the steps

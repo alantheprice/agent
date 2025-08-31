@@ -6,8 +6,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/alantheprice/ledit/pkg/orchestration/types"
-	ui "github.com/alantheprice/ledit/pkg/ui"
+	"github.com/alantheprice/agent-template/pkg/orchestration/types"
+	ui "github.com/alantheprice/agent-template/pkg/ui"
 )
 
 // LoadState loads an orchestration plan state from the given path

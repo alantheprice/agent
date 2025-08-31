@@ -1,4 +1,4 @@
-module github.com/alantheprice/ledit
+module github.com/alantheprice/agent-template
 
 go 1.24.0
 

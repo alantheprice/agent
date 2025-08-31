@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alantheprice/ledit/pkg/llm"
-	"github.com/alantheprice/ledit/pkg/orchestration/types"
-	ui "github.com/alantheprice/ledit/pkg/ui"
+	"github.com/alantheprice/agent-template/pkg/llm"
+	"github.com/alantheprice/agent-template/pkg/orchestration/types"
+	ui "github.com/alantheprice/agent-template/pkg/ui"
 )
 
 // validateResults performs final validation of orchestration results

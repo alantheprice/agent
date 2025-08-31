@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/alantheprice/ledit/pkg/interfaces/types"
+	"github.com/alantheprice/agent-template/pkg/interfaces/types"
 )
 
 // LLMProvider defines the interface for interacting with Large Language Models

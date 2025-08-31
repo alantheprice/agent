@@ -1,0 +1,173 @@
+{
+  "agent": {
+    "name": "Git Workflow Assistant",
+    "description": "AI agent that performs code review on staged changes, generates commit messages, and manages git workflow with user interaction",
+    "version": "1.0.0",
+    "goals": [
+      "Review staged git changes for quality and issues",
+      "Provide detailed feedback on code improvements",
+      "Generate meaningful commit messages following best practices",
+      "Guide users through the commit process with approval steps"
+    ],
+    "capabilities": [
+      "Git diff analysis",
+      "Code quality review",
+      "Commit message generation",
+      "Interactive workflow management"
+    ],
+    "max_iterations": 25,
+    "timeout": "20m",
+    "interactive": true
+  },
+  "llm": {
+    "provider": "anthropic",
+    "model": "claude-3-sonnet-20240229",
+    "temperature": 0.3,
+    "max_tokens": 4000,
+    "system_prompt": "You are an expert software engineer and code reviewer. Analyze code changes thoroughly, provide constructive feedback, and generate clear, conventional commit messages. Be precise, helpful, and focus on code quality, security, and maintainability."
+  },
+  "data_sources": [
+    {
+      "name": "git_repository_info",
+      "type": "file",
+      "config": {
+        "path": ".git/HEAD",
+        "format": "text"
+      },
+      "preprocessing": [
+        {
+          "type": "validate",
+          "config": {
+            "max_size": "1KB"
+          }
+        }
+      ]
+    },
+    {
+      "name": "project_config",
+      "type": "file", 
+      "config": {
+        "path": ".gitignore",
+        "format": "text"
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "name": "comprehensive_git_workflow",
+      "description": "Complete git workflow with code review, commit message generation, and user approvals",
+      "steps": [
+        {
+          "name": "get_staged_changes",
+          "prompt": "Use the git_diff tool to get the current staged changes. We need to analyze what changes are ready for commit. If no staged changes exist, instruct the user to stage changes first with 'git add <files>'.",
+          "timeout": "30s",
+          "retry_count": 0
+        },
+        {
+          "name": "analyze_staged_changes",
+          "prompt": "Analyze the staged git changes in detail. Look for:\n\n1. Code quality issues\n2. Potential bugs or security concerns\n3. Best practice violations\n4. Performance implications\n5. Documentation needs\n6. Test coverage considerations\n\nProvide a comprehensive analysis with specific line-by-line feedback where applicable. Focus on constructive suggestions for improvement.",
+          "depends_on": ["get_staged_changes"],
+          "timeout": "3m",
+          "retry_count": 1
+        },
+        {
+          "name": "user_review_approval",
+          "prompt": "Based on the code analysis, present the review findings and ask for approval to proceed with the commit. Present the analysis clearly and ask for user confirmation to proceed (y/n).",
+          "depends_on": ["analyze_staged_changes"],
+          "timeout": "300s"
+        },
+        {
+          "name": "handle_revision_request",
+          "prompt": "Provide additional detailed suggestions for improving the code. Focus on:\n1. Specific refactoring opportunities\n2. Alternative implementation approaches\n3. Code organization improvements\n4. Performance optimizations\n5. Security enhancements",
+          "depends_on": ["user_review_approval"],
+          "timeout": "180s"
+        },
+        {
+          "name": "generate_commit_message", 
+          "prompt": "Generate a high-quality commit message following conventional commit format. Create a message that:\n1. Uses conventional commit format (type: description)\n2. Has a clear, concise subject line (≤50 chars)\n3. Includes detailed body if needed (≤72 chars per line)\n4. Explains the 'why' not just the 'what'\n\nFormat:\ntype(scope): short description\n\nLonger explanation if needed\n- Key changes\n- Impact\n- Reasoning",
+          "depends_on": ["user_review_approval"],
+          "timeout": "2m",
+          "retry_count": 1
+        },
+        {
+          "name": "commit_message_approval",
+          "prompt": "Review the generated commit message and ask for user approval to proceed with creating the commit.",
+          "depends_on": ["generate_commit_message"],
+          "timeout": "180s"
+        },
+        {
+          "name": "execute_commit",
+          "prompt": "Execute the git commit with the approved message. Use the git_commit tool to create the commit and provide confirmation of successful completion including the commit hash.",
+          "depends_on": ["commit_message_approval"],
+          "timeout": "30s"
+        }
+      ]
+    },
+    {
+      "name": "quick_commit_review",
+      "description": "Simplified workflow for quick commits with basic review",
+      "steps": [
+        {
+          "name": "quick_analysis",
+          "prompt": "Quickly analyze staged changes and generate commit message:\n\n{staged_changes}\n\nProvide:\n1. Brief code review summary\n2. Conventional commit message\n3. Any critical issues found",
+          "timeout": "90s"
+        },
+        {
+          "name": "quick_approval",
+          "prompt": "Quick review:\n\nAnalysis: {quick_analysis}\n\nProceed with commit? (y/n):",
+          "depends_on": ["quick_analysis"],
+          "timeout": "60s",
+          "user_input": true
+        }
+      ]
+    }
+  ],
+  "tools": {
+    "git_diff": {
+      "enabled": true,
+      "timeout": "60s",
+      "description": "Get git diff for staged changes"
+    },
+    "git_status": {
+      "enabled": true,
+      "timeout": "30s", 
+      "description": "Check git repository status"
+    },
+    "git_commit": {
+      "enabled": true,
+      "timeout": "30s",
+      "description": "Execute git commit with message"
+    },
+    "ask_user": {
+      "enabled": true,
+      "timeout": "300s",
+      "description": "Interactive user input and approval"
+    },
+    "validate_input": {
+      "enabled": true,
+      "timeout": "10s",
+      "description": "Validate user input format"
+    }
+  },
+  "output": {
+    "format": "structured",
+    "fields": {
+      "review_summary": "string",
+      "issues_found": "array",
+      "commit_message": "string", 
+      "commit_hash": "string",
+      "user_decisions": "object",
+      "workflow_status": "string"
+    },
+    "destination": "stdout"
+  },
+  "budget": {
+    "max_tokens": 50000,
+    "max_cost": 10.00,
+    "warn_at_percentage": 80
+  },
+  "security": {
+    "allowed_paths": [".git/", "./"],
+    "max_file_size": "1MB"
+  }
+}

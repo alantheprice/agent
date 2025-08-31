@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alantheprice/ledit/pkg/orchestration/types"
+	"github.com/alantheprice/agent-template/pkg/orchestration/types"
 )
 
 // loadStateIfCompatible loads previous orchestration state if compatible

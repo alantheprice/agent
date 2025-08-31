@@ -1,0 +1,119 @@
+{
+  "agent": {
+    "name": "Customer Support Bot",
+    "description": "AI-powered customer support agent that handles inquiries, provides solutions, and escalates complex issues",
+    "version": "1.0.0",
+    "goals": [
+      "Provide accurate customer support responses",
+      "Resolve common customer issues quickly",
+      "Escalate complex problems appropriately", 
+      "Maintain positive customer experience"
+    ],
+    "capabilities": [
+      "Query processing",
+      "Knowledge base search",
+      "Ticket classification",
+      "Response generation"
+    ],
+    "max_iterations": 10,
+    "timeout": "5m",
+    "interactive": true
+  },
+  "llm": {
+    "provider": "openai",
+    "model": "gpt-4",
+    "temperature": 0.2,
+    "max_tokens": 1000,
+    "system_prompt": "You are a professional customer support agent. Be helpful, empathetic, and solution-focused. If you can't resolve an issue, clearly explain next steps."
+  },
+  "data_sources": [
+    {
+      "name": "knowledge_base",
+      "type": "directory",
+      "config": {
+        "path": "./support/kb",
+        "recursive": true,
+        "format": "text"
+      },
+      "preprocessing": [
+        {
+          "type": "filter",
+          "config": {
+            "includes": [".md", ".txt"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "customer_data", 
+      "type": "api",
+      "config": {
+        "url": "https://api.example.com/customers/{customer_id}",
+        "method": "GET",
+        "headers": {
+          "Authorization": "${SUPPORT_API_KEY}"
+        }
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "name": "handle_inquiry",
+      "description": "Process customer inquiries and provide responses",
+      "steps": [
+        {
+          "name": "classify_inquiry",
+          "prompt": "Classify this customer inquiry into one of: billing, technical, general, complaint. Inquiry: {input}",
+          "timeout": "30s"
+        },
+        {
+          "name": "search_knowledge",
+          "prompt": "Search the knowledge base for information relevant to this {classification} inquiry: {input}",
+          "depends_on": ["classify_inquiry"],
+          "timeout": "1m"
+        },
+        {
+          "name": "generate_response",
+          "prompt": "Generate a helpful customer support response based on the inquiry classification ({classification}) and knowledge base results. Be professional and solution-focused.",
+          "depends_on": ["search_knowledge"],
+          "timeout": "1m"
+        }
+      ]
+    }
+  ],
+  "tools": {
+    "search": {
+      "enabled": true,
+      "timeout": "30s",
+      "description": "Search knowledge base and documentation"
+    },
+    "ticket_create": {
+      "enabled": true,
+      "timeout": "60s", 
+      "description": "Create support tickets for escalation"
+    },
+    "customer_lookup": {
+      "enabled": true,
+      "timeout": "30s",
+      "description": "Look up customer account information"
+    },
+    "ask_user": {
+      "enabled": true,
+      "timeout": "120s"
+    }
+  },
+  "output": {
+    "format": "structured",
+    "fields": {
+      "response": "string",
+      "classification": "string", 
+      "escalation_needed": "boolean",
+      "confidence": "number"
+    },
+    "destination": "stdout"
+  },
+  "budget": {
+    "max_tokens": 10000,
+    "max_cost": 5.00
+  }
+}

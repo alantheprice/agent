@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/alantheprice/agent-template/pkg/embedding"
 )
 
 // DataIngestor handles ingesting data from various sources
@@ -66,6 +68,8 @@ func (di *DataIngestor) ingestSource(ctx context.Context, source DataSource) (*I
 		return di.ingestWeb(ctx, source)
 	case "stdin":
 		return di.ingestStdin(ctx, source)
+	case "embedding":
+		return di.ingestEmbedding(ctx, source)
 	default:
 		return nil, fmt.Errorf("unsupported source type: %s", source.Type)
 	}
@@ -321,6 +325,84 @@ func (di *DataIngestor) applyTransform(data interface{}, config map[string]inter
 	}
 
 	return data, nil
+}
+
+// ingestEmbedding indexes content into vector storage
+func (di *DataIngestor) ingestEmbedding(ctx context.Context, source DataSource) (*IngestedData, error) {
+	// Extract embedding configuration from source config
+	var embeddingConfig embedding.EmbeddingDataSourceConfig
+
+	// Map config to embedding config struct
+	if storageDir, ok := source.Config["storage_dir"].(string); ok {
+		embeddingConfig.StorageDir = storageDir
+	}
+	if provider, ok := source.Config["provider"].(string); ok {
+		embeddingConfig.Provider = provider
+	}
+	if model, ok := source.Config["model"].(string); ok {
+		embeddingConfig.Model = model
+	}
+	if apiKey, ok := source.Config["api_key"].(string); ok {
+		embeddingConfig.APIKey = apiKey
+	}
+	if sourcePathsI, ok := source.Config["source_paths"].([]interface{}); ok {
+		sourcePaths := make([]string, len(sourcePathsI))
+		for i, path := range sourcePathsI {
+			if pathStr, ok := path.(string); ok {
+				sourcePaths[i] = pathStr
+			}
+		}
+		embeddingConfig.SourcePaths = sourcePaths
+	}
+	if filePatternsI, ok := source.Config["file_patterns"].([]interface{}); ok {
+		filePatterns := make([]string, len(filePatternsI))
+		for i, pattern := range filePatternsI {
+			if patternStr, ok := pattern.(string); ok {
+				filePatterns[i] = patternStr
+			}
+		}
+		embeddingConfig.FilePatterns = filePatterns
+	}
+	if excludePatternsI, ok := source.Config["exclude_patterns"].([]interface{}); ok {
+		excludePatterns := make([]string, len(excludePatternsI))
+		for i, pattern := range excludePatternsI {
+			if patternStr, ok := pattern.(string); ok {
+				excludePatterns[i] = patternStr
+			}
+		}
+		embeddingConfig.ExcludePatterns = excludePatterns
+	}
+	if chunkSize, ok := source.Config["chunk_size"].(float64); ok {
+		embeddingConfig.ChunkSize = int(chunkSize)
+	}
+	if refreshInterval, ok := source.Config["refresh_interval"].(string); ok {
+		embeddingConfig.RefreshInterval = refreshInterval
+	}
+	if metadata, ok := source.Config["metadata"].(map[string]interface{}); ok {
+		embeddingConfig.Metadata = metadata
+	}
+
+	// Create embedding data source
+	embeddingDataSource, err := embedding.NewEmbeddingDataSource(embeddingConfig)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create embedding data source: %w", err)
+	}
+
+	// Ingest data into embeddings
+	stats, err := embeddingDataSource.IngestData(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ingest embedding data: %w", err)
+	}
+
+	// Get all embeddings for the result
+	embeddings := embeddingDataSource.GetEmbeddings()
+
+	return &IngestedData{
+		Source:   source.Name,
+		Type:     source.Type,
+		Data:     embeddings,
+		Metadata: stats,
+	}, nil
 }
 
 // applyValidation validates data

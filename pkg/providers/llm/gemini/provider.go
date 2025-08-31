@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/alantheprice/ledit/pkg/interfaces"
-	"github.com/alantheprice/ledit/pkg/interfaces/types"
+	"github.com/alantheprice/agent-template/pkg/interfaces"
+	"github.com/alantheprice/agent-template/pkg/interfaces/types"
 )
 
 // Provider implements the Gemini LLM provider

@@ -3,7 +3,7 @@ package interfaces
 import (
 	"context"
 
-	"github.com/alantheprice/ledit/pkg/interfaces/types"
+	"github.com/alantheprice/agent-template/pkg/interfaces/types"
 )
 
 // CodeGenerator defines the interface for generating and applying code changes

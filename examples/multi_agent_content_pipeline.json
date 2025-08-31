@@ -1,0 +1,144 @@
+{
+  "version": "1.0",
+  "goal": "Create comprehensive content through a multi-agent research, writing, and optimization pipeline",
+  "description": "A multi-agent workflow that researches topics, creates content, optimizes for SEO, and generates social media promotion materials",
+  "base_model": "gpt-4",
+  "agents": [
+    {
+      "id": "researcher",
+      "name": "Content Researcher",
+      "persona": "research_specialist",
+      "description": "Conducts comprehensive research on topics and gathers relevant information",
+      "skills": ["research", "fact_checking", "trend_analysis", "data_gathering"],
+      "model": "gpt-4",
+      "priority": 1,
+      "depends_on": [],
+      "config": {"skip_prompt": "false"},
+      "budget": {
+        "max_tokens": 50000,
+        "max_cost": 5.0,
+        "token_warning": 40000,
+        "cost_warning": 4.0,
+        "alert_on_limit": true,
+        "stop_on_limit": false
+      }
+    },
+    {
+      "id": "writer",
+      "name": "Content Writer",
+      "persona": "content_creator",
+      "description": "Creates engaging and well-structured content based on research findings",
+      "skills": ["writing", "storytelling", "content_structure", "audience_engagement"],
+      "model": "claude-3-sonnet-20240229",
+      "provider": "anthropic",
+      "priority": 2,
+      "depends_on": ["researcher"],
+      "config": {"skip_prompt": "false"},
+      "budget": {
+        "max_tokens": 75000,
+        "max_cost": 8.0,
+        "token_warning": 60000,
+        "cost_warning": 6.5,
+        "alert_on_limit": true,
+        "stop_on_limit": false
+      }
+    },
+    {
+      "id": "seo_optimizer",
+      "name": "SEO Specialist", 
+      "persona": "seo_expert",
+      "description": "Optimizes content for search engines and improves discoverability",
+      "skills": ["seo_optimization", "keyword_research", "meta_data", "readability"],
+      "model": "gemini-1.5-pro",
+      "provider": "gemini",
+      "priority": 3,
+      "depends_on": ["writer"],
+      "config": {"skip_prompt": "false"},
+      "budget": {
+        "max_tokens": 40000,
+        "max_cost": 4.0,
+        "token_warning": 32000,
+        "cost_warning": 3.2,
+        "alert_on_limit": true,
+        "stop_on_limit": false
+      }
+    },
+    {
+      "id": "social_promoter",
+      "name": "Social Media Manager",
+      "persona": "social_media_expert", 
+      "description": "Creates social media content and promotion strategies",
+      "skills": ["social_media", "hashtag_research", "content_adaptation", "engagement"],
+      "model": "claude-3-haiku-20240307",
+      "provider": "anthropic",
+      "priority": 4,
+      "depends_on": ["seo_optimizer"],
+      "config": {"skip_prompt": "false"},
+      "budget": {
+        "max_tokens": 30000,
+        "max_cost": 3.0,
+        "token_warning": 24000,
+        "cost_warning": 2.4,
+        "alert_on_limit": true,
+        "stop_on_limit": false
+      }
+    }
+  ],
+  "orchestration": {
+    "timeout": "45m",
+    "retry_limit": 2,
+    "parallel_agents": false,
+    "enable_communication": true,
+    "save_intermediate": true,
+    "failure_handling": "continue_if_possible"
+  },
+  "data_sources": [
+    {
+      "name": "brand_guidelines",
+      "type": "file",
+      "path": "./brand/brand_guidelines.md",
+      "description": "Company brand guidelines and style requirements"
+    },
+    {
+      "name": "content_calendar",
+      "type": "directory",
+      "path": "./content/calendar/",
+      "description": "Existing content calendar and scheduling information"
+    },
+    {
+      "name": "competitor_analysis",
+      "type": "file", 
+      "path": "./research/competitors.json",
+      "description": "Analysis of competitor content and strategies"
+    }
+  ],
+  "output": {
+    "format": "structured",
+    "destination": "./output/content_pipeline_results/",
+    "include_metadata": true,
+    "save_agent_outputs": true,
+    "generate_summary": true
+  },
+  "budget": {
+    "total_max_cost": 25.0,
+    "total_max_tokens": 200000,
+    "cost_warning_threshold": 20.0,
+    "token_warning_threshold": 160000,
+    "stop_on_budget_exceeded": false,
+    "track_per_agent": true
+  },
+  "security": {
+    "allow_file_operations": true,
+    "allowed_directories": ["./content/", "./brand/", "./research/", "./output/"],
+    "max_file_size_mb": 10,
+    "validate_file_types": true,
+    "allowed_extensions": [".md", ".txt", ".json", ".csv"]
+  },
+  "monitoring": {
+    "log_level": "info",
+    "track_performance": true,
+    "save_execution_trace": true,
+    "report_agent_status": true,
+    "enable_progress_updates": true
+  }
+}

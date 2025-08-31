@@ -1,0 +1,156 @@
+{
+  "agent": {
+    "name": "Social Media Manager",
+    "description": "AI agent that creates, schedules, and optimizes social media content across multiple platforms",
+    "version": "1.0.0",
+    "goals": [
+      "Create engaging social media content",
+      "Optimize posting schedules for maximum reach",
+      "Analyze performance metrics and trends",
+      "Maintain consistent brand voice across platforms"
+    ],
+    "capabilities": [
+      "Content creation and curation",
+      "Hashtag research and optimization",
+      "Performance analytics",
+      "Multi-platform posting"
+    ],
+    "max_iterations": 15,
+    "timeout": "8m",
+    "interactive": false
+  },
+  "llm": {
+    "provider": "anthropic",
+    "model": "claude-3-haiku-20240307",
+    "temperature": 0.8,
+    "max_tokens": 2000,
+    "system_prompt": "You are a social media expert. Create engaging, platform-appropriate content that drives engagement while maintaining brand consistency. Focus on trends, hashtags, and optimal posting strategies."
+  },
+  "data_sources": [
+    {
+      "name": "brand_guidelines",
+      "type": "file",
+      "config": {
+        "path": "./brand/guidelines.md",
+        "format": "text"
+      }
+    },
+    {
+      "name": "content_calendar",
+      "type": "directory", 
+      "config": {
+        "path": "./content/calendar",
+        "recursive": false,
+        "format": "json"
+      },
+      "preprocessing": [
+        {
+          "type": "filter",
+          "config": {
+            "includes": [".json", ".md"]
+          }
+        }
+      ]
+    },
+    {
+      "name": "trending_topics",
+      "type": "api",
+      "config": {
+        "url": "https://api.example.com/trends",
+        "method": "GET",
+        "headers": {
+          "Authorization": "${SOCIAL_API_KEY}"
+        }
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "name": "create_post_campaign",
+      "description": "Create a complete social media campaign with posts for multiple platforms",
+      "steps": [
+        {
+          "name": "analyze_trends",
+          "prompt": "Analyze current trending topics and suggest relevant hashtags for the brand: {brand_guidelines}. Focus on trends that align with our target audience.",
+          "timeout": "2m"
+        },
+        {
+          "name": "generate_content",
+          "prompt": "Create 5 different social media posts based on the brand guidelines and trending analysis. Include: 1 educational post, 1 entertaining post, 1 promotional post, 1 community engagement post, and 1 behind-the-scenes post. Each should be platform-optimized.",
+          "depends_on": ["analyze_trends"],
+          "timeout": "3m"
+        },
+        {
+          "name": "optimize_hashtags",
+          "prompt": "For each post created, generate optimal hashtag sets: 5-10 hashtags for Instagram, 2-3 for Twitter/X, professional tags for LinkedIn. Mix popular and niche hashtags.",
+          "depends_on": ["generate_content"],
+          "timeout": "1m"
+        },
+        {
+          "name": "schedule_optimization",
+          "prompt": "Suggest optimal posting times for each platform based on the content calendar and audience engagement patterns. Provide specific days and times.",
+          "depends_on": ["optimize_hashtags"],
+          "timeout": "1m"
+        }
+      ]
+    },
+    {
+      "name": "performance_analysis",
+      "description": "Analyze social media performance and provide optimization recommendations",
+      "steps": [
+        {
+          "name": "metrics_review",
+          "prompt": "Analyze the provided social media metrics and identify top-performing content types, optimal posting times, and engagement patterns.",
+          "timeout": "2m"
+        },
+        {
+          "name": "improvement_recommendations",
+          "prompt": "Based on the metrics analysis, provide specific recommendations for improving engagement, reach, and conversion rates. Include content strategy adjustments.",
+          "depends_on": ["metrics_review"],
+          "timeout": "2m"
+        }
+      ]
+    }
+  ],
+  "tools": {
+    "hashtag_research": {
+      "enabled": true,
+      "timeout": "60s",
+      "description": "Research trending and relevant hashtags"
+    },
+    "image_generator": {
+      "enabled": false,
+      "timeout": "120s",
+      "description": "Generate social media graphics and visuals"
+    },
+    "analytics": {
+      "enabled": true,
+      "timeout": "30s",
+      "description": "Access social media analytics and metrics"
+    },
+    "scheduler": {
+      "enabled": true,
+      "timeout": "30s",
+      "description": "Schedule posts across multiple platforms"
+    }
+  },
+  "output": {
+    "format": "structured",
+    "fields": {
+      "posts": "array",
+      "hashtags": "object",
+      "schedule": "object",
+      "analytics": "object",
+      "recommendations": "array"
+    },
+    "destination": "content/output/social_campaign.json"
+  },
+  "budget": {
+    "max_tokens": 15000,
+    "max_cost": 8.00
+  },
+  "security": {
+    "allowed_paths": ["./content/", "./brand/"],
+    "max_file_size": "5MB"
+  }
+}

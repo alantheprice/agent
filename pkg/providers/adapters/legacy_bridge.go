@@ -7,12 +7,12 @@ import (
 	"io"
 	"time"
 
-	"github.com/alantheprice/ledit/pkg/config"
-	"github.com/alantheprice/ledit/pkg/interfaces"
-	"github.com/alantheprice/ledit/pkg/interfaces/types"
-	"github.com/alantheprice/ledit/pkg/prompts"
-	"github.com/alantheprice/ledit/pkg/providers/llm"
-	oldTypes "github.com/alantheprice/ledit/pkg/types"
+	"github.com/alantheprice/agent-template/pkg/config"
+	"github.com/alantheprice/agent-template/pkg/interfaces"
+	"github.com/alantheprice/agent-template/pkg/interfaces/types"
+	"github.com/alantheprice/agent-template/pkg/prompts"
+	"github.com/alantheprice/agent-template/pkg/providers/llm"
+	oldTypes "github.com/alantheprice/agent-template/pkg/types"
 )
 
 // LegacyLLMBridge bridges the old LLM API to the new interface-based system
