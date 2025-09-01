@@ -34,6 +34,7 @@ TEST_SCRIPTS=(
     "test_workflow_execution.sh"
     "test_error_handling.sh"
     "test_security_validation.sh"
+    "test_loop_go_analysis.sh"
 )
 
 # Run all tests
