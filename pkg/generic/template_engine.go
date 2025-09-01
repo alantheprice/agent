@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // TemplateFunction represents a built-in template function
@@ -35,9 +36,39 @@ func NewTemplateEngine(logger *slog.Logger) *TemplateEngine {
 func (te *TemplateEngine) RenderTemplate(template string, stepResults map[string]*StepResult, execCtx *ExecutionContext) (string, error) {
 	rendered := template
 
+	// Debug: Log available step results
+	te.logger.Info("Template rendering starting",
+		"available_steps", func() []string {
+			var steps []string
+			for stepName, result := range stepResults {
+				status := "failed"
+				if result.Success {
+					status = "success"
+				}
+				steps = append(steps, fmt.Sprintf("%s(%s)", stepName, status))
+			}
+			return steps
+		}(),
+		"template_preview", func() string {
+			if len(template) > 200 {
+				return template[:200] + "..."
+			}
+			return template
+		}())
+
 	// Find all template expressions: {expression}
 	re := regexp.MustCompile(`\{([^}]+)\}`)
 	matches := re.FindAllStringSubmatch(template, -1)
+
+	te.logger.Info("Found template expressions", "count", len(matches), "expressions", func() []string {
+		var exprs []string
+		for _, match := range matches {
+			if len(match) >= 2 {
+				exprs = append(exprs, match[1])
+			}
+		}
+		return exprs
+	}())
 
 	for _, match := range matches {
 		if len(match) < 2 {
@@ -50,19 +81,23 @@ func (te *TemplateEngine) RenderTemplate(template string, stepResults map[string
 		// Resolve the expression
 		value, err := te.resolveExpression(expression, stepResults, execCtx)
 		if err != nil {
-			te.logger.Warn("Failed to resolve template expression", "expression", expression, "error", err)
+			te.logger.Error("Failed to resolve template expression", "expression", expression, "error", err)
 			continue // Leave unresolved expressions as-is
 		}
 
 		// Convert to string
 		valueStr := te.formatValue(value)
 
-		te.logger.Debug("Template substitution",
+		te.logger.Info("Template substitution successful",
 			"expression", expression,
-			"placeholder", fullMatch,
 			"value_type", fmt.Sprintf("%T", value),
 			"value_length", len(valueStr),
-			"sample_value", valueStr[:min(100, len(valueStr))])
+			"sample_value", func() string {
+				if len(valueStr) > 100 {
+					return valueStr[:100] + "..."
+				}
+				return valueStr
+			}())
 
 		// Replace in template
 		rendered = strings.ReplaceAll(rendered, fullMatch, valueStr)
@@ -198,8 +233,38 @@ func (te *TemplateEngine) resolveFunction(expression string, stepResults map[str
 
 // resolveSimpleReference resolves simple step names or context keys
 func (te *TemplateEngine) resolveSimpleReference(name string, stepResults map[string]*StepResult, execCtx *ExecutionContext) (interface{}, error) {
+	// Debug logging for step resolution
+	te.logger.Debug("Resolving simple reference",
+		"name", name,
+		"available_steps", func() []string {
+			var steps []string
+			for stepName := range stepResults {
+				steps = append(steps, stepName)
+			}
+			return steps
+		}())
+
 	// Check step results first
 	if result, exists := stepResults[name]; exists && result.Success && result.Output != nil {
+		te.logger.Debug("Found step result",
+			"name", name,
+			"output_type", fmt.Sprintf("%T", result.Output),
+			"output_preview", func() string {
+				if str, ok := result.Output.(string); ok {
+					return str[:min(100, len(str))]
+				}
+				if m, ok := result.Output.(map[string]interface{}); ok {
+					return fmt.Sprintf("map with keys: %v", func() []string {
+						var keys []string
+						for k := range m {
+							keys = append(keys, k)
+						}
+						return keys
+					}())
+				}
+				return fmt.Sprintf("%v", result.Output)
+			}())
+
 		// For shell command results, we need to return the whole result as a structured object
 		// so that dot notation can access .output, .command, .success fields
 		if resultMap, ok := result.Output.(map[string]interface{}); ok {
@@ -214,6 +279,7 @@ func (te *TemplateEngine) resolveSimpleReference(name string, stepResults map[st
 		return value, nil
 	}
 
+	te.logger.Debug("Reference not found", "name", name)
 	return nil, fmt.Errorf("reference not found: %s", name)
 }
 
@@ -496,6 +562,7 @@ func (te *TemplateEngine) registerBuiltinFunctions() {
 	te.functions["subtract"] = te.subtractFunction
 	te.functions["multiply"] = te.multiplyFunction
 	te.functions["divide"] = te.divideFunction
+	te.functions["timestamp"] = te.timestampFunction
 }
 
 // Built-in template functions implementation
@@ -763,4 +830,18 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+// timestampFunction generates a timestamp
+func (te *TemplateEngine) timestampFunction(args []interface{}) (interface{}, error) {
+	// Optional format argument, defaults to RFC3339
+	format := "2006-01-02 15:04:05"
+
+	if len(args) > 0 {
+		if formatStr, ok := args[0].(string); ok {
+			format = formatStr
+		}
+	}
+
+	return time.Now().Format(format), nil
 }

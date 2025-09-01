@@ -115,21 +115,12 @@
           ]
         },
         {
-          "name": "infer_change_goals",
-          "type": "llm",
-          "config": {
-            "prompt": "First, analyze the full set of staged changes to understand the overall goal and purpose of this commit. Look at:\n\n1. **What is the main objective?** (feature, fix, refactor, etc.)\n2. **What problem is being solved?**\n3. **How do the files work together?**\n4. **What is the scope and impact?**\n\nBased on the staged git diff shown below, provide a clear, concise summary of what this commit is trying to achieve:\n\n**Git Diff Output:**\n{get_staged_changes.output}\n\n**Analysis Instructions:**\n- Focus on the actual code changes, not just file names\n- Identify the type of changes: additions (+), deletions (-), modifications\n- Determine if this is a feature, fix, refactor, docs update, etc.\n- Assess the scope and potential impact\n\nProvide a clear, concise summary of what this commit is trying to achieve based on the actual code changes."
-          },
-          "depends_on": ["get_staged_changes"],
-          "timeout": "2m"
-        },
-        {
           "name": "thorough_code_review",
           "type": "llm_display",
           "config": {
-            "prompt": "Perform a focused code review to identify concerns and issues that need attention. Only report problems - do not mention positive aspects.\n\n**Look for these specific concerns:**\n\n**Code Quality Issues:**\n- Poor naming conventions or unclear organization\n- Functions violating single responsibility\n- Missing or inadequate error handling\n- Maintainability problems\n\n**LLM Code Generation Problems:**\n- Over-complicated or verbose implementations\n- Unnecessary abstractions or patterns\n- Generic variable/function names\n- Incomplete implementations or TODOs\n- Copy-paste patterns without customization\n- Missing input validation\n- Hardcoded values that should be configurable\n\n**Security & Performance Concerns:**\n- Potential security vulnerabilities\n- Performance bottlenecks or inefficiencies\n- Resource management issues (memory, connections, etc.)\n\n**Testing & Documentation Gaps:**\n- Missing tests for new functionality\n- Insufficient documentation or comments\n- Breaking changes without migration notes\n\n**Change Statistics:**\n- Files modified: {len(modified_files)} files\n- Lines added: {added_lines_count} additions\n- Lines deleted: {deleted_lines_count} deletions\n- Net change: {subtract(added_lines_count, deleted_lines_count)} lines\n- Change summary: {infer_change_goals}\n\n**Code Changes to Review:**\n```diff\n{get_staged_changes.output}\n```\n\n**Instructions:**\n- Only report issues and concerns that need fixing\n- Provide specific line references where applicable\n- Highlight critical issues that should block the commit\n- If no significant issues are found, state \"No significant concerns identified\""
+            "prompt": "Perform a focused code review to identify concerns and issues that need attention. Only report problems - do not mention positive aspects.\n\n**Look for these specific concerns:**\n\n**Code Quality Issues:**\n- Poor naming conventions or unclear organization\n- Functions violating single responsibility\n- Missing or inadequate error handling\n- Maintainability problems\n\n**LLM Code Generation Problems:**\n- Over-complicated or verbose implementations\n- Unnecessary abstractions or patterns\n- Generic variable/function names\n- Incomplete implementations or TODOs\n- Copy-paste patterns without customization\n- Missing input validation\n- Hardcoded values that should be configurable\n\n**Security & Performance Concerns:**\n- Potential security vulnerabilities\n- Performance bottlenecks or inefficiencies\n- Resource management issues (memory, connections, etc.)\n\n**Testing & Documentation Gaps:**\n- Missing tests for new functionality\n- Insufficient documentation or comments\n- Breaking changes without migration notes\n\n**Change Statistics:**\n- Files modified: {len(modified_files)} files\n- Lines added: {added_lines_count} additions\n- Lines deleted: {deleted_lines_count} deletions\n- Net change: {subtract(added_lines_count, deleted_lines_count)} lines\n\n**Code Changes to Review:**\n```diff\n{get_staged_changes.output}\n```\n\n**Instructions:**\n- Only report issues and concerns that need fixing\n- Provide specific line references where applicable\n- Highlight critical issues that should block the commit\n- If no significant issues are found, state \"No significant concerns identified\""
           },
-          "depends_on": ["get_staged_changes", "infer_change_goals"],
+           "depends_on": ["get_staged_changes", "infer_change_goals"],
           "timeout": "5m"
         },
 
@@ -153,7 +144,7 @@
             "tool": "write_file",
             "params": {
               "path": "code-review-feedback.md",
-              "content": "# Code Review Feedback\n\n## Goal Analysis\nThe LLM has analyzed your code changes to understand the overall goal and purpose.\n\n## Code Quality Review\nFile-by-file analysis has been completed covering naming conventions, design patterns, error handling, and maintainability.\n\n## Security & Performance Analysis\nAnalysis completed for potential vulnerabilities, bottlenecks, and resource management.\n\n## Recommendations\nPlease refer to the detailed LLM analysis output above for specific recommendations and actionable feedback."
+              "content": "# Code Review Feedback\n\nGenerated on: {timestamp()}\n\n## Code Review Results\n{thorough_code_review}\n\n## Change Statistics\n- Files modified: {len(modified_files)} files\n- Lines added: {added_lines_count}\n- Lines deleted: {deleted_lines_count}\n- Net change: {subtract(added_lines_count, deleted_lines_count)} lines\n\n## Git Diff\n```diff\n{get_staged_changes.output}\n```\n\n---\n*This feedback was generated automatically by the Git Workflow Assistant*"
             }
           },
           "depends_on": ["review_user_decision"],
@@ -170,7 +161,7 @@
           "name": "generate_commit_message",
           "type": "llm",
           "config": {
-            "prompt": "Based on the code review analysis and user feedback, generate a high-quality conventional commit message that:\n\n1. **Follows conventional commit format**: `type(scope): description`\n2. **Uses appropriate type**: feat, fix, docs, style, refactor, test, chore, etc.\n3. **Has clear, concise subject** (≤50 characters)\n4. **includes detailed body** explaining the 'why' not just the 'what'\n5. **References any breaking changes**\n\n**Enhanced Context Analysis (Auto-Generated):**\n- Change Goal: {infer_change_goals}\n- Review Analysis: {thorough_code_review}\n- User Decision: {review_user_decision}\n\n**Change Statistics:**\n- Files modified: {len(modified_files)} files\n- Lines added: {added_lines_count}\n- Lines deleted: {deleted_lines_count}\n- Net change: {subtract(added_lines_count, deleted_lines_count)} lines\n- Has new files: {contains(get_staged_changes.output, 'new file')}\n- Has breaking changes: {contains(thorough_code_review, 'breaking')}\n\n**Generate the commit message in this format:**\n```\ntype(scope): short description\n\nDetailed explanation of changes:\n- Key changes made\n- Why these changes were necessary\n- Impact on the codebase\n\nStats: {len(modified_files)} files, +{added_lines_count}/-{deleted_lines_count} lines\n```"
+            "prompt": "Generate a high-quality conventional commit message based on the code changes below:\n\n**Requirements:**\n1. **Follows conventional commit format**: `type(scope): description`\n2. **Uses appropriate type**: feat, fix, docs, style, refactor, test, chore, etc.\n3. **Has clear, concise subject** (≤50 characters)\n4. **Includes detailed body** explaining the 'why' not just the 'what'\n5. **References any breaking changes**\n\n**Change Statistics:**\n- Files modified: {len(modified_files)} files\n- Lines added: {added_lines_count}\n- Lines deleted: {deleted_lines_count}\n- Net change: {subtract(added_lines_count, deleted_lines_count)} lines\n- Has new files: {contains(get_staged_changes.output, 'new file')}\n- Has breaking changes: {contains(get_staged_changes.output, 'BREAKING CHANGE')}\n\n**Code Changes:**\n```diff\n{get_staged_changes.output}\n```\n\n**Instructions:**\n- Focus on WHAT was changed and WHY it was necessary\n- Be specific about the functionality or improvements added\n- Use imperative mood (\"add\" not \"added\" or \"adds\")\n- Keep the subject line under 50 characters\n- Provide context in the body about the motivation and impact\n\n**Generate the commit message in this format:**\n```\ntype(scope): short description\n\nDetailed explanation of changes:\n- Key changes made\n- Why these changes were necessary\n- Impact on the codebase\n\nStats: {len(modified_files)} files, +{added_lines_count}/-{deleted_lines_count} lines\n```"
           },
           "post_transforms": [
             {
@@ -181,7 +172,7 @@
               },
               "store_as": "commit_message_length"
             }
-          ],
+           ],
           "depends_on": ["review_user_decision"],
           "conditions": [
             {
@@ -322,8 +313,8 @@
     "destination": "stdout"
   },
   "budget": {
-    "max_tokens": 50000,
-    "max_cost": 10.00,
+    "max_tokens": 150000,
+    "max_cost": 1.50,
     "warn_at_percentage": 80
   },
   "security": {
