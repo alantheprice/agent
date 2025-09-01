@@ -17,11 +17,11 @@ echo "=================================="
 echo
 
 # Check if binary exists
-BINARY="../../bin/agent-template"
+BINARY="../../bin/agent"
 if [ ! -f "$BINARY" ]; then
-    echo -e "${YELLOW}Building agent-template binary...${NC}"
+    echo -e "${YELLOW}Building agent binary...${NC}"
     cd ../..
-    go build -o bin/agent-template .
+    go build -o bin/agent .
     cd examples/vision_to_code
 fi
 

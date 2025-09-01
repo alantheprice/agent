@@ -32,8 +32,8 @@
   "embeddings": {
     "provider": "deepinfra",
     "model": "Qwen/Qwen3-Embedding-4B",
-    "chunk_size": 1000,
-    "batch_size": 10
+    "chunk_size": 800,
+    "batch_size": 5
   },
   "data_sources": [
     {
@@ -43,7 +43,7 @@
         "storage_dir": "./embeddings_cache",
         "source_paths": ["./"],
         "file_patterns": ["*.go", "*.md", "*.json", "*.yaml", "*.yml"],
-        "exclude_patterns": ["node_modules/**", ".git/**", "vendor/**", "dist/**", "build/**", "*.min.js", "*.map", ".claude/**", ".vscode/**", ".idea/**", "*.log", "tmp/**", "temp/**", "embeddings_cache/**", "coverage.out", "coverage.html"],
+        "exclude_patterns": ["node_modules/**", ".git/**", "vendor/**", "dist/**", "build/**", "*.min.js", "*.map", ".claude/**", ".vscode/**", ".idea/**", "*.log", "tmp/**", "temp/**", "embeddings_cache/**", "coverage.out", "coverage.html", "test_*", "*.test.go", "*_test.go"],
         "refresh_interval": "1h",
         "metadata": {
           "purpose": "code_editing_context"
@@ -87,7 +87,7 @@
             }
           },
           "depends_on": ["welcome_message"],
-          "timeout": "2m"
+          "timeout": "5m"
         },
         {
           "name": "analyze_requirements",

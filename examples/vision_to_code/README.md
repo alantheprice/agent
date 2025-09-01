@@ -61,7 +61,7 @@ Complete Codebase + Documentation
 ./examples/demo_vision_to_code.sh
 
 # With custom parameters  
-./agent-template process ./examples/vision_to_code_pipeline.json \
+./agent process ./examples/vision_to_code_pipeline.json \
   --input screenshot_url="https://example.com/design.png" \
   --input framework_preference="React" \
   --output-dir "./my_project"
@@ -206,7 +206,7 @@ jobs:
     steps:
       - uses: actions/checkout@v3
       - name: Generate Code from Design
-        run: ./agent-template process vision_to_code_pipeline.json
+        run: ./agent process vision_to_code_pipeline.json
 ```
 
 ### API Integration
@@ -245,12 +245,12 @@ chmod 755 ./output_directory
 
 Enable verbose logging:
 ```bash
-./agent-template process vision_to_code_pipeline.json --verbose --debug
+./agent process vision_to_code_pipeline.json --verbose --debug
 ```
 
 Check configuration:
 ```bash
-./agent-template validate --config vision_to_code_pipeline.json
+./agent validate --config vision_to_code_pipeline.json
 ```
 
 ## Contributing

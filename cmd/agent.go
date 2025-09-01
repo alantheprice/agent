@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/alantheprice/agent-template/pkg/generic"
+	"github.com/alantheprice/agent/pkg/generic"
 	"github.com/spf13/cobra"
 )
 
@@ -24,8 +24,8 @@ var runCmd = &cobra.Command{
 	- Supports all generic agent framework features
 	
 	Examples:
-	  agent-template run "Process this data" --config agent.json
-	  agent-template run --config my-agent.json`,
+	  agent run "Process this data" --config agent.json
+	  agent run --config my-agent.json`,
 	Run: runAgent,
 }
 
@@ -37,7 +37,7 @@ var validateCmd = &cobra.Command{
 	Checks syntax, required fields, and configuration consistency.
 	
 	Examples:
-	  agent-template validate --config agent.json`,
+	  agent validate --config agent.json`,
 	Run: validateConfig,
 }
 

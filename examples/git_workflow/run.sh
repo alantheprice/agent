@@ -10,4 +10,4 @@ PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
 CONFIG_FILE="$SCRIPT_DIR/git_workflow_assistant.json"
 
 cd "$PROJECT_DIR"
-exec ./agent-template process "$CONFIG_FILE" "$@"
+exec ./agent process "$CONFIG_FILE" "$@"

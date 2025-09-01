@@ -8,7 +8,7 @@ import (
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
-	Use:   "agent-template",
+	Use:   "agent",
 	Short: "Generic AI Agent Framework",
 	Long: `A generic, configurable AI agent framework that can be customized 
 through JSON configuration files to create specialized AI agents.
@@ -25,8 +25,8 @@ Available commands:
   process  - Execute multi-agent orchestration processes
 
 Examples:
-  agent-template process my-workflow.json
-  agent-template process --create-example example.json`,
+  agent process my-workflow.json
+  agent process --create-example example.json`,
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.

@@ -7,7 +7,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$(dirname "$SCRIPT_DIR")")"
-CONFIG_FILE="$SCRIPT_DIR/enhanced_code_editor.json"
+CONFIG_FILE="$SCRIPT_DIR/optimized_code_editor.json"
 
 # Check if DEEPINFRA_API_KEY is set
 if [ -z "$DEEPINFRA_API_KEY" ]; then
@@ -80,4 +80,4 @@ echo ""
 
 # Change to project root and run the agent
 cd "$PROJECT_DIR"
-exec ./agent-template process "$CONFIG_FILE" "$@"
+exec ./agent process "$CONFIG_FILE" "$@"

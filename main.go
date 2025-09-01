@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/alantheprice/agent-template/cmd"
+	"github.com/alantheprice/agent/cmd"
 )
 
 func main() {

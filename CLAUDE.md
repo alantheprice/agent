@@ -7,13 +7,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### Building and Running
 ```bash
 # Build the main executable
-go build -o agent-template .
+go build -o agent .
 
 # Run an agent configuration
-./agent-template process examples/configs/content_creator.json
+./agent process examples/configs/content_creator.json
 
 # Validate a configuration file
-./agent-template validate examples/configs/web_scraper.json
+./agent validate examples/configs/web_scraper.json
 ```
 
 ### Testing
@@ -98,20 +98,28 @@ Future enhancements planned:
 - `examples/configs/content_creator.json` - Content generation and copywriting
 - `examples/configs/web_scraper.json` - Web scraping and data extraction
 - `examples/git_workflow/git_workflow_assistant.json` - Git analysis and commit generation
-- `examples/code_editor/llm_code_editor.json` - AI-powered code editing with semantic search
+- `examples/code_editor/llm_code_editor_no_embeddings.json` - AI-powered code editing (reliable version)
+- `examples/code_editor/optimized_code_editor.json` - Advanced code editing with smart project analysis
+- `examples/code_editor/llm_code_editor.json` - Full-featured code editing with semantic search
 - `examples/multi_agent_orchestration/` - Multi-agent workflows
 
 ### Running Examples
 ```bash
 # Content creation
-./agent-template process examples/configs/content_creator.json
+./agent process examples/configs/content_creator.json
 
-# Code editing (requires DEEPINFRA_API_KEY)
+# Code editing (requires DEEPINFRA_API_KEY) - reliable version
 export DEEPINFRA_API_KEY="your-api-key"
-./agent-template process examples/code_editor/llm_code_editor.json
+./agent process examples/code_editor/llm_code_editor_no_embeddings.json
+
+# Advanced code editing with smart analysis
+./agent process examples/code_editor/optimized_code_editor.json
+
+# Full-featured with embeddings (may timeout on large repos)
+./agent process examples/code_editor/llm_code_editor.json
 
 # Git workflow assistant
-./agent-template process examples/git_workflow/git_workflow_assistant.json
+./agent process examples/git_workflow/git_workflow_assistant.json
 ```
 
 ## Key Implementation Patterns

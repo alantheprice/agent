@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/alantheprice/agent-template/pkg/generic"
+	"github.com/alantheprice/agent/pkg/generic"
 	"github.com/spf13/cobra"
 )
 
@@ -34,9 +34,9 @@ var processCmd = &cobra.Command{
 	- Supports budget controls and cost management per agent
 
 	Examples:
-	  agent-template process process.json
-	  agent-template process --create-example process.json
-	  agent-template process --dry-run process.json`,
+	  agent process process.json
+	  agent process --create-example process.json
+	  agent process --dry-run process.json`,
 	Args: cobra.ArbitraryArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Handle create-example flag

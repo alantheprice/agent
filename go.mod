@@ -1,4 +1,4 @@
-module github.com/alantheprice/agent-template
+module github.com/alantheprice/agent
 
 go 1.24.0
 

@@ -126,7 +126,7 @@ Custom test discovery and execution
 export DEEPINFRA_API_KEY="your-api-key"
 
 # Run enhanced workflow
-./agent-template process examples/code_editor/enhanced_code_editor.json
+./agent process examples/code_editor/enhanced_code_editor.json
 
 # Or use the convenience script
 ./examples/code_editor/run_enhanced.sh

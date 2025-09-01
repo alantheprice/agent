@@ -1,0 +1,161 @@
+{
+  "agent": {
+    "name": "LLM Code Editor (No Embeddings)",
+    "description": "AI agent that performs code editing without embeddings for testing",
+    "version": "1.0.0",
+    "goals": [
+      "Collect user requirements for code changes",
+      "List available files",
+      "Perform intelligent edits with tool use"
+    ],
+    "max_iterations": 20,
+    "timeout": "15m",
+    "interactive": true
+  },
+  "llm": {
+    "provider": "deepinfra",
+    "model": "deepseek-ai/DeepSeek-V3.1",
+    "temperature": 0.2,
+    "max_tokens": 4000,
+    "system_prompt": "You are an expert software engineer and code editor AI. Your expertise includes:\n\n1. **Code Understanding**: Analyzing codebases and understanding file relationships\n2. **File Editing**: Making precise, targeted edits to code files\n3. **Tool Usage**: Leveraging available tools for reading files, making edits, and validation\n4. **Safety**: Always reading full files before making any edits\n\nIMPORTANT SAFETY RULES:\n- NEVER edit a file without first reading its complete contents using the read_file tool\n- Always understand the full context of a file before making changes\n- Make precise, minimal changes that address the user's requirements\n- Validate changes whenever possible\n\nBe thorough, precise, and always prioritize code quality and safety."
+  },
+  "workflows": [
+    {
+      "name": "code_editor_workflow",
+      "description": "Simple code editing workflow without embeddings",
+      "steps": [
+        {
+          "name": "welcome_message",
+          "type": "display",
+          "config": {
+            "text": "# LLM Code Editor (Test Version)\n\nI'm an AI code editor that can help you make intelligent changes to your codebase.\nI'll:\n1. Understand what changes you want to make\n2. List available files in your workspace\n3. Make precise edits with full file analysis\n\nLet's get started!"
+          },
+          "timeout": "2s"
+        },
+        {
+          "name": "collect_user_requirements",
+          "type": "tool",
+          "config": {
+            "tool": "ask_user",
+            "params": {
+              "question": "What code changes would you like me to make? Please describe the functionality, features, or fixes you need:",
+              "timeout": 300
+            }
+          },
+          "depends_on": ["welcome_message"],
+          "timeout": "5m"
+        },
+        {
+          "name": "list_project_files",
+          "type": "tool",
+          "config": {
+            "tool": "list_files",
+            "params": {
+              "path": "."
+            }
+          },
+          "depends_on": ["welcome_message"],
+          "timeout": "30s"
+        },
+        {
+          "name": "confirm_file_selection",
+          "type": "tool",
+          "config": {
+            "tool": "ask_user",
+            "params": {
+              "question": "I can see the following files in your project:\n\n{list_project_files.output}\n\nPlease tell me which specific files you'd like me to edit or examine for your requested changes:",
+              "default_response": "Please suggest which files to edit"
+            }
+          },
+          "depends_on": ["list_project_files", "collect_user_requirements"],
+          "timeout": "5m"
+        },
+        {
+          "name": "perform_code_editing",
+          "type": "llm",
+          "config": {
+            "prompt": "You are now going to edit code files based on the user's requirements. Follow these steps:\n\nUser Requirements: {collect_user_requirements.response}\nProject Files: {list_project_files.output}\nFile Selection: {confirm_file_selection.response}\n\n**MANDATORY SAFETY RULE**: Before editing ANY file, you MUST first use the read_file tool to read its complete contents. Never make edits without understanding the full file context.\n\n**Your task:**\n1. For each file to be edited, use read_file tool to read its complete contents\n2. Analyze the code structure and understand how to implement the changes\n3. Use write_file tool to make the necessary edits\n4. Ensure changes are minimal, precise, and maintain code quality\n5. Provide a summary of what was changed and why\n\n**Available Tools:**\n- read_file: Read complete file contents\n- write_file: Write modified file contents \n- shell_command: Run commands for validation/testing\n- list_files: List directory contents if needed\n\nStart by reading the first file and proceed systematically through each file."
+          },
+          "depends_on": ["confirm_file_selection"],
+          "timeout": "10m",
+          "retry_count": 2
+        },
+        {
+          "name": "validate_changes",
+          "type": "tool",
+          "config": {
+            "tool": "shell_command",
+            "params": {
+              "command": "# Check if code compiles/validates\nif [ -f \"go.mod\" ]; then\n  echo \"Running Go validation...\"\n  go build ./... && echo \"✓ Go build successful\" || echo \"✗ Go build failed\"\nelif [ -f \"package.json\" ]; then\n  echo \"Running Node.js validation...\"\n  npm run build 2>/dev/null && echo \"✓ Build successful\" || echo \"Build command not found or failed\"\n  npm test 2>/dev/null && echo \"✓ Tests passed\" || echo \"Test command not found or failed\"\nelif [ -f \"requirements.txt\" ] || [ -f \"setup.py\" ]; then\n  echo \"Python project detected\"\n  python -m py_compile *.py 2>/dev/null && echo \"✓ Python syntax valid\" || echo \"Python syntax check failed\"\nelse\n  echo \"✓ No specific validation available, changes applied\"\nfi",
+              "timeout": 60
+            }
+          },
+          "depends_on": ["perform_code_editing"],
+          "timeout": "2m"
+        },
+        {
+          "name": "provide_summary",
+          "type": "llm_display",
+          "config": {
+            "prompt": "Provide a comprehensive summary of the code editing session:\n\nUser Requirements: {collect_user_requirements.response}\nProject Files: {list_project_files.output}\nFile Selection: {confirm_file_selection.response}\nEditing Results: {perform_code_editing}\nValidation Results: {validate_changes.output}\n\nSummarize:\n1. What changes were requested\n2. Which files were selected and why\n3. What specific changes were made to each file\n4. Whether validation passed\n5. Next steps or recommendations for the user\n\nFormat your response as a clear, structured summary."
+          },
+          "depends_on": ["validate_changes"],
+          "timeout": "2m"
+        }
+      ]
+    }
+  ],
+  "tools": {
+    "read_file": {
+      "enabled": true,
+      "timeout": "30s",
+      "description": "Read complete contents of a file - REQUIRED before any edits"
+    },
+    "write_file": {
+      "enabled": true,
+      "timeout": "30s",
+      "description": "Write modified content to a file"
+    },
+    "list_files": {
+      "enabled": true,
+      "timeout": "30s",
+      "description": "List files in a directory to explore structure"
+    },
+    "shell_command": {
+      "enabled": true,
+      "timeout": "60s",
+      "description": "Execute shell commands for validation and testing"
+    },
+    "ask_user": {
+      "enabled": true,
+      "timeout": "300s",
+      "description": "Interactive user input and confirmation"
+    },
+    "json_parse": {
+      "enabled": true,
+      "timeout": "10s",
+      "description": "Parse JSON responses"
+    }
+  },
+  "output": {
+    "format": "structured",
+    "fields": {
+      "user_requirements": "string",
+      "selected_files": "array",
+      "changes_summary": "string",
+      "validation_results": "string",
+      "workflow_status": "string"
+    },
+    "destination": "stdout"
+  },
+  "budget": {
+    "max_tokens": 100000,
+    "max_cost": 2.00,
+    "warn_at_percentage": 80
+  },
+  "security": {
+    "allowed_paths": ["./", "../"],
+    "allowed_commands": ["go", "npm", "python", "node", "bash"],
+    "max_file_size": "1MB"
+  }
+}

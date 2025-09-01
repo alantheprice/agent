@@ -1,0 +1,183 @@
+{
+  "agent": {
+    "name": "Optimized LLM Code Editor",
+    "description": "AI agent that performs intelligent code editing with smart file discovery and selection",
+    "version": "2.0.0",
+    "goals": [
+      "Understand user requirements for code changes",
+      "Discover and analyze project structure intelligently", 
+      "Select relevant files based on change requirements",
+      "Perform precise, safe code edits",
+      "Validate changes and provide comprehensive feedback"
+    ],
+    "max_iterations": 30,
+    "timeout": "20m",
+    "interactive": true
+  },
+  "llm": {
+    "provider": "deepinfra",
+    "model": "deepseek-ai/DeepSeek-V3.1",
+    "temperature": 0.1,
+    "max_tokens": 6000,
+    "system_prompt": "You are an expert software engineer and code editor AI with deep understanding of:\n\n🔧 **Technical Skills:**\n- Code analysis and architecture understanding\n- File relationship mapping and dependency analysis\n- Precise, targeted code modifications\n- Build systems, testing, and validation\n- Programming patterns and best practices\n\n🛡️ **Safety Protocols:**\n- ALWAYS read complete file contents before ANY modification\n- Understand full context before making changes\n- Make minimal, precise changes that achieve the goal\n- Preserve existing code style and conventions\n- Validate changes whenever possible\n\n🎯 **Approach:**\n- Analyze the entire project structure to understand context\n- Identify the most relevant files for the requested changes\n- Plan changes systematically before implementation\n- Provide clear explanations for all modifications\n- Suggest improvements and alternative approaches when appropriate\n\nBe thorough, methodical, and always prioritize code quality and maintainability."
+  },
+  "workflows": [
+    {
+      "name": "intelligent_code_editing_workflow",
+      "description": "Advanced code editing workflow with smart file discovery and selection",
+      "steps": [
+        {
+          "name": "welcome_and_setup",
+          "type": "display",
+          "config": {
+            "text": "# 🚀 Optimized LLM Code Editor\n\n**I'm your AI code editing assistant!** I can help you make intelligent changes to your codebase.\n\n## My capabilities:\n✅ Smart project structure analysis\n✅ Intelligent file selection based on your requirements\n✅ Precise, safe code modifications\n✅ Automatic validation and testing\n✅ Comprehensive change documentation\n\n## How I work:\n1. 📝 Understand your change requirements\n2. 🔍 Analyze your project structure\n3. 🎯 Select the most relevant files\n4. ⚡ Make precise, targeted edits\n5. ✅ Validate changes and provide feedback\n\nLet's get started!"
+          },
+          "timeout": "5s"
+        },
+        {
+          "name": "collect_requirements",
+          "type": "tool",
+          "config": {
+            "tool": "ask_user",
+            "params": {
+              "question": "🎯 **What changes would you like me to make?**\n\nPlease provide:\n- What functionality you want to add/modify/fix\n- Any specific files or components you know are involved\n- The expected behavior or outcome\n- Any constraints or requirements\n\nExample: \"Add a new authentication middleware that validates JWT tokens\"\nExample: \"Fix the database connection timeout issue in the user service\"\nExample: \"Refactor the payment processing to use the new API\"",
+              "timeout": 300
+            }
+          },
+          "depends_on": ["welcome_and_setup"],
+          "timeout": "5m"
+        },
+        {
+          "name": "discover_project_structure",
+          "type": "tool",
+          "config": {
+            "tool": "shell_command",
+            "params": {
+              "command": "echo \"📁 PROJECT STRUCTURE ANALYSIS\"\necho \"==============================\"\n\n# Find all relevant code files\necho \"\\n🔍 Code Files:\"\nfind . -type f \\( -name '*.go' -o -name '*.py' -o -name '*.js' -o -name '*.ts' -o -name '*.java' -o -name '*.cpp' -o -name '*.c' -o -name '*.rs' -o -name '*.php' \\) \\\n  ! -path './.git/*' ! -path './node_modules/*' ! -path './vendor/*' ! -path './dist/*' ! -path './build/*' \\\n  | head -20\n\n# Find configuration files\necho \"\\n⚙️ Config Files:\"\nfind . -type f \\( -name '*.json' -o -name '*.yaml' -o -name '*.yml' -o -name '*.toml' -o -name '*.env' -o -name 'Makefile' -o -name 'Dockerfile' \\) \\\n  ! -path './.git/*' ! -path './node_modules/*' ! -path './vendor/*' \\\n  | head -10\n\n# Find documentation\necho \"\\n📚 Documentation:\"\nfind . -type f \\( -name '*.md' -o -name '*.txt' \\) \\\n  ! -path './.git/*' ! -path './node_modules/*' \\\n  | head -10\n\n# Project type detection\necho \"\\n🏷️ Project Type:\"\nif [ -f \"go.mod\" ]; then echo \"Go project detected\"; fi\nif [ -f \"package.json\" ]; then echo \"Node.js project detected\"; fi\nif [ -f \"requirements.txt\" ] || [ -f \"setup.py\" ]; then echo \"Python project detected\"; fi\nif [ -f \"Cargo.toml\" ]; then echo \"Rust project detected\"; fi\nif [ -f \"pom.xml\" ] || [ -f \"build.gradle\" ]; then echo \"Java project detected\"; fi\n\necho \"\\n✅ Structure analysis complete!\"",
+              "timeout": 30
+            }
+          },
+          "depends_on": ["welcome_and_setup"],
+          "timeout": "45s"
+        },
+        {
+          "name": "analyze_and_select_files",
+          "type": "llm",
+          "config": {
+            "prompt": "🧠 **INTELLIGENT FILE SELECTION**\n\nBased on the user's requirements and project structure, I need to identify the most relevant files to examine and potentially modify.\n\n**User Requirements:**\n{collect_requirements.response}\n\n**Project Structure:**\n{discover_project_structure.output}\n\n**My Analysis Task:**\n1. Understand what the user wants to achieve\n2. Identify which files are most likely to need changes\n3. Consider dependencies and related components\n4. Plan the approach for implementing the changes\n\n**I should use the available tools to:**\n- Use `list_files` to explore specific directories if needed\n- Use `read_file` to examine files that seem relevant\n- Identify 2-5 key files that need to be modified\n\n**Available Tools:** list_files, read_file\n\nLet me start by exploring the most relevant areas of the codebase based on the user's requirements."
+          },
+          "depends_on": ["collect_requirements", "discover_project_structure"],
+          "timeout": "10m",
+          "retry_count": 2
+        },
+        {
+          "name": "confirm_plan",
+          "type": "tool",
+          "config": {
+            "tool": "ask_user",
+            "params": {
+              "question": "🎯 **IMPLEMENTATION PLAN**\n\nBased on my analysis:\n{analyze_and_select_files}\n\n**Do you want me to proceed with this plan?**\n\nOptions:\n- `yes` - Proceed with the implementation\n- `modify` - Suggest changes to the plan\n- `explore` - Examine additional files first\n- `cancel` - Stop the workflow\n\nPlease respond with your choice and any additional comments:",
+              "default_response": "yes"
+            }
+          },
+          "depends_on": ["analyze_and_select_files"],
+          "timeout": "5m"
+        },
+        {
+          "name": "implement_changes",
+          "type": "llm",
+          "config": {
+            "prompt": "⚡ **IMPLEMENTATION PHASE**\n\n**User Requirements:**\n{collect_requirements.response}\n\n**My Analysis:**\n{analyze_and_select_files}\n\n**User Confirmation:**\n{confirm_plan.response}\n\n**🛡️ SAFETY CHECKLIST:**\n✅ Read complete file contents before ANY modification\n✅ Understand the full context and dependencies\n✅ Make minimal, precise changes\n✅ Preserve existing code style and patterns\n✅ Document all changes clearly\n\n**📋 IMPLEMENTATION STEPS:**\n1. For each file to be modified:\n   - Use `read_file` to get complete contents\n   - Analyze the code structure and patterns\n   - Plan the specific changes needed\n   - Use `write_file` to apply changes\n   - Explain what was changed and why\n\n2. Handle dependencies:\n   - Check if changes affect other files\n   - Update imports, references, etc.\n\n3. Maintain code quality:\n   - Follow existing patterns and conventions\n   - Add appropriate comments if needed\n   - Ensure proper error handling\n\n**Available Tools:** read_file, write_file, list_files, shell_command\n\nLet me start implementing the changes systematically..."
+          },
+          "depends_on": ["confirm_plan"],
+          "conditions": [
+            {
+              "field": "confirm_plan.response",
+              "operator": "not_contains",
+              "value": "cancel"
+            }
+          ],
+          "timeout": "15m",
+          "retry_count": 3
+        },
+        {
+          "name": "validate_implementation",
+          "type": "tool",
+          "config": {
+            "tool": "shell_command",
+            "params": {
+              "command": "echo \"🧪 VALIDATION AND TESTING\"\necho \"=========================\"\n\n# Project-specific validation\nif [ -f \"go.mod\" ]; then\n  echo \"\\n🔵 Go Project Validation:\"\n  echo \"- Checking syntax and imports...\"\n  go fmt ./... 2>&1 || echo \"⚠️ Go fmt warnings\"\n  echo \"- Building project...\"\n  go build ./... 2>&1 && echo \"✅ Go build successful\" || echo \"❌ Go build failed\"\n  echo \"- Running tests...\"\n  go test ./... -v 2>&1 | tail -10 || echo \"⚠️ Some tests may have failed\"\nelif [ -f \"package.json\" ]; then\n  echo \"\\n🟢 Node.js Project Validation:\"\n  echo \"- Checking for syntax errors...\"\n  node -c package.json 2>&1 && echo \"✅ package.json valid\" || echo \"❌ package.json invalid\"\n  if command -v npm >/dev/null 2>&1; then\n    echo \"- Installing dependencies...\"\n    npm install --silent 2>&1 | tail -5\n    echo \"- Running build...\"\n    npm run build 2>&1 | tail -10 && echo \"✅ Build successful\" || echo \"⚠️ Build issues detected\"\n    echo \"- Running tests...\"\n    npm test 2>&1 | tail -10 || echo \"⚠️ Test issues detected\"\n  fi\nelif [ -f \"requirements.txt\" ] || [ -f \"setup.py\" ]; then\n  echo \"\\n🐍 Python Project Validation:\"\n  echo \"- Checking syntax...\"\n  python -m py_compile *.py 2>&1 && echo \"✅ Python syntax valid\" || echo \"❌ Python syntax errors\"\n  if command -v python -m pytest >/dev/null 2>&1; then\n    echo \"- Running tests...\"\n    python -m pytest -v 2>&1 | tail -10 || echo \"⚠️ Test issues detected\"\n  fi\nelse\n  echo \"\\n📁 General Validation:\"\n  echo \"- Checking for common issues...\"\n  find . -name '*.orig' -o -name '*.rej' -o -name '*~' | head -5\n  echo \"✅ Basic validation complete\"\nfi\n\necho \"\\n📊 SUMMARY:\"\necho \"- Modified files validated\"\necho \"- Build/syntax checks completed\"\necho \"- Ready for review\"",
+              "timeout": 120
+            }
+          },
+          "depends_on": ["implement_changes"],
+          "timeout": "3m"
+        },
+        {
+          "name": "generate_summary",
+          "type": "llm_display",
+          "config": {
+            "prompt": "📋 **COMPREHENSIVE CHANGE SUMMARY**\n\n## 📝 Original Request\n{collect_requirements.response}\n\n## 🔍 Analysis Results\n{analyze_and_select_files}\n\n## ⚡ Implementation Details\n{implement_changes}\n\n## ✅ Validation Results\n{validate_implementation.output}\n\n## 📊 **EXECUTIVE SUMMARY**\n\n### ✅ What Was Accomplished\n- [ ] List the specific changes made\n- [ ] Files modified and why\n- [ ] New functionality added\n- [ ] Issues fixed\n\n### 🔧 Technical Details\n- **Files Modified:** [List files]\n- **Lines Changed:** [Estimate]\n- **New Dependencies:** [If any]\n- **Breaking Changes:** [If any]\n\n### ✅ Validation Status\n- **Build Status:** [Pass/Fail/Warnings]\n- **Tests:** [Pass/Fail/Skipped]\n- **Code Quality:** [Good/Issues]\n\n### 🚀 Next Steps\n1. Review the changes carefully\n2. Test the functionality manually if needed\n3. Consider any additional improvements\n4. Deploy when ready\n\n### 💡 Recommendations\n[Any suggestions for improvements or follow-up tasks]\n\n---\n**🤖 Generated by Optimized LLM Code Editor v2.0**"
+          },
+          "depends_on": ["validate_implementation"],
+          "timeout": "3m"
+        }
+      ]
+    }
+  ],
+  "tools": {
+    "read_file": {
+      "enabled": true,
+      "timeout": "30s",
+      "description": "Read complete contents of a file - MANDATORY before any edits"
+    },
+    "write_file": {
+      "enabled": true, 
+      "timeout": "30s",
+      "description": "Write modified content to a file"
+    },
+    "list_files": {
+      "enabled": true,
+      "timeout": "30s", 
+      "description": "List files in directories to explore project structure"
+    },
+    "shell_command": {
+      "enabled": true,
+      "timeout": "120s",
+      "description": "Execute shell commands for analysis, validation and testing"
+    },
+    "ask_user": {
+      "enabled": true,
+      "timeout": "300s",
+      "description": "Interactive user input, confirmation and feedback"
+    },
+    "json_parse": {
+      "enabled": true,
+      "timeout": "10s",
+      "description": "Parse JSON responses and data"
+    }
+  },
+  "output": {
+    "format": "structured",
+    "fields": {
+      "user_requirements": "string",
+      "project_analysis": "string", 
+      "selected_files": "array",
+      "implementation_summary": "string",
+      "validation_results": "string",
+      "workflow_status": "string",
+      "recommendations": "string"
+    },
+    "destination": "stdout"
+  },
+  "budget": {
+    "max_tokens": 150000,
+    "max_cost": 5.00,
+    "warn_at_percentage": 85
+  },
+  "security": {
+    "allowed_paths": ["./", "../", "/tmp"],
+    "allowed_commands": ["go", "npm", "python", "node", "bash", "find", "grep", "cat", "ls", "head", "tail"],
+    "max_file_size": "2MB"
+  }
+}
