@@ -176,6 +176,8 @@ func (we *WorkflowEngine) executeStep(ctx context.Context, step Step, execCtx *E
 			output, err = we.executeLLMStep(ctx, step, execCtx, previousResults)
 		case "llm_display":
 			output, err = we.executeLLMDisplayStep(ctx, step, execCtx, previousResults)
+		case "llm_with_tools":
+			output, err = we.executeLLMWithToolsStep(ctx, step, execCtx, previousResults)
 		case "display":
 			output, err = we.executeDisplayStep(ctx, step, execCtx, previousResults)
 		case "script":
@@ -324,6 +326,159 @@ func (we *WorkflowEngine) executeLLMDisplayStep(ctx context.Context, step Step, 
 	fmt.Println()
 
 	return response.Content, nil
+}
+
+// executeLLMWithToolsStep executes an LLM step with tool access for interactive exploration
+func (we *WorkflowEngine) executeLLMWithToolsStep(ctx context.Context, step Step, execCtx *ExecutionContext, previousResults map[string]*StepResult) (interface{}, error) {
+	prompt, ok := step.Config["prompt"].(string)
+	if !ok {
+		return nil, fmt.Errorf("prompt not specified in step config")
+	}
+
+	// Template rendering for prompt with context variables
+	renderedPrompt, err := we.templateEngine.RenderTemplate(prompt, previousResults, execCtx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to render prompt template: %w", err)
+	}
+
+	// Get initial LLM response
+	response, err := we.llmClient.Complete(ctx, renderedPrompt)
+	if err != nil {
+		return nil, err
+	}
+
+	// Update metrics
+	execCtx.Metrics.LLMTokensUsed += response.TokensUsed
+	execCtx.Metrics.LLMCost += response.Cost
+
+	// Check if the LLM is requesting tool usage by looking for tool usage patterns
+	// This is a simple implementation - a full implementation would use function calling
+	fullResponse := response.Content
+	toolExecutions := []string{}
+
+	// Look for tool usage requests in the response (simple pattern matching)
+	// Example patterns: "Let me check the file..." or "I'll run grep..."
+	if we.shouldExecuteTools(response.Content) {
+		toolResult, err := we.executeToolsBasedOnLLMResponse(ctx, response.Content, execCtx, previousResults)
+		if err != nil {
+			we.logger.Warn("Tool execution failed", "error", err)
+			toolExecutions = append(toolExecutions, fmt.Sprintf("Tool execution failed: %v", err))
+		} else {
+			toolExecutions = append(toolExecutions, toolResult)
+		}
+
+		// Get follow-up response from LLM with tool results
+		followUpPrompt := fmt.Sprintf("%s\n\nTool execution results:\n%s\n\nBased on these results, please provide your final analysis:",
+			renderedPrompt, strings.Join(toolExecutions, "\n\n"))
+
+		followUpResponse, err := we.llmClient.Complete(ctx, followUpPrompt)
+		if err != nil {
+			we.logger.Warn("Follow-up LLM call failed", "error", err)
+		} else {
+			fullResponse = followUpResponse.Content
+			execCtx.Metrics.LLMTokensUsed += followUpResponse.TokensUsed
+			execCtx.Metrics.LLMCost += followUpResponse.Cost
+		}
+	}
+
+	// Display the LLM response to the user
+	fmt.Println("=== LLM ANALYSIS WITH TOOLS ===")
+	fmt.Println()
+	fmt.Print(fullResponse)
+	fmt.Println()
+	if len(toolExecutions) > 0 {
+		fmt.Println("=== TOOL EXECUTIONS ===")
+		fmt.Println(strings.Join(toolExecutions, "\n\n"))
+		fmt.Println()
+	}
+	fmt.Println("=== END ANALYSIS ===")
+	fmt.Println()
+
+	return fullResponse, nil
+}
+
+// shouldExecuteTools determines if the LLM response indicates tool usage is needed
+func (we *WorkflowEngine) shouldExecuteTools(response string) bool {
+	// Simple heuristics to detect when LLM wants to use tools
+	patterns := []string{
+		"let me check",
+		"i'll examine",
+		"let me look at",
+		"i need to verify",
+		"let me search",
+		"i'll run",
+		"let me find",
+	}
+
+	lowerResponse := strings.ToLower(response)
+	for _, pattern := range patterns {
+		if strings.Contains(lowerResponse, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
+// executeToolsBasedOnLLMResponse executes tools based on LLM response analysis
+func (we *WorkflowEngine) executeToolsBasedOnLLMResponse(ctx context.Context, response string, execCtx *ExecutionContext, previousResults map[string]*StepResult) (string, error) {
+	results := []string{}
+
+	// Simple pattern matching for common operations
+	// In a full implementation, this would use proper function calling
+
+	// Check for file reading requests
+	if strings.Contains(strings.ToLower(response), "read") && strings.Contains(strings.ToLower(response), "file") {
+		// Extract potential file paths or suggest reading key files
+		keyFiles := []string{
+			"pkg/generic/workflow_engine.go",
+			"pkg/generic/template_engine.go",
+			"pkg/generic/tool_registry.go",
+		}
+
+		for _, file := range keyFiles {
+			if tool, exists := we.toolRegistry.GetTool("read_file"); exists {
+				params := map[string]interface{}{
+					"path":     file,
+					"max_size": 10240, // 10KB limit
+				}
+				result, err := tool.Execute(ctx, params)
+				if err != nil {
+					results = append(results, fmt.Sprintf("Failed to read %s: %v", file, err))
+				} else {
+					if resultMap, ok := result.(map[string]interface{}); ok {
+						if content, hasContent := resultMap["content"].(string); hasContent {
+							// Truncate content for display
+							if len(content) > 2000 {
+								content = content[:2000] + "\n... (truncated)"
+							}
+							results = append(results, fmt.Sprintf("Content of %s:\n%s", file, content))
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Check for directory listing requests
+	if strings.Contains(strings.ToLower(response), "list") || strings.Contains(strings.ToLower(response), "directory") {
+		if tool, exists := we.toolRegistry.GetTool("list_files"); exists {
+			params := map[string]interface{}{
+				"path": "pkg/generic",
+			}
+			result, err := tool.Execute(ctx, params)
+			if err != nil {
+				results = append(results, fmt.Sprintf("Failed to list files: %v", err))
+			} else {
+				results = append(results, fmt.Sprintf("Files in pkg/generic/: %v", result))
+			}
+		}
+	}
+
+	if len(results) == 0 {
+		return "No specific tool executions were triggered based on the response.", nil
+	}
+
+	return strings.Join(results, "\n\n"), nil
 }
 
 // executeDisplayStep executes a display step that shows static text to the user
