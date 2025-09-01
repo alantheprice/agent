@@ -151,10 +151,7 @@ func (we *WorkflowEngine) executeStep(ctx context.Context, step Step, execCtx *E
 		return result, fmt.Errorf("pre-transform failed: %w", err)
 	}
 
-	defer func() {
-		result.ExecutionTime = time.Since(startTime)
-		execCtx.StepResults[step.Name] = result
-	}()
+	// Note: Result storage moved to after post-transforms complete
 
 	// Execute with retry logic
 	maxAttempts := 1
@@ -179,6 +176,8 @@ func (we *WorkflowEngine) executeStep(ctx context.Context, step Step, execCtx *E
 			output, err = we.executeLLMStep(ctx, step, execCtx, previousResults)
 		case "llm_display":
 			output, err = we.executeLLMDisplayStep(ctx, step, execCtx, previousResults)
+		case "display":
+			output, err = we.executeDisplayStep(ctx, step, execCtx, previousResults)
 		case "script":
 			output, err = we.executeScriptStep(ctx, step, execCtx, previousResults)
 		case "condition":
@@ -194,7 +193,6 @@ func (we *WorkflowEngine) executeStep(ctx context.Context, step Step, execCtx *E
 		if err == nil {
 			result.Success = true
 			result.Output = output
-			result.ExecutionTime = time.Since(startTime)
 
 			// Execute post-transforms
 			postErr := we.transformPipeline.ExecutePostTransforms(step, result, previousResults, execCtx)
@@ -202,6 +200,11 @@ func (we *WorkflowEngine) executeStep(ctx context.Context, step Step, execCtx *E
 				we.logger.Warn("Post-transform failed", "step", step.Name, "error", postErr)
 				// Don't fail the step for post-transform errors, just log them
 			}
+
+			// Set execution time and store result in execution context AFTER post-transforms complete
+			// This ensures dependent steps have access to post-transform data
+			result.ExecutionTime = time.Since(startTime)
+			execCtx.StepResults[step.Name] = result
 
 			return result, nil
 		}
@@ -213,6 +216,10 @@ func (we *WorkflowEngine) executeStep(ctx context.Context, step Step, execCtx *E
 	result.Success = false
 	result.Error = lastErr
 	result.ExecutionTime = time.Since(startTime)
+
+	// Store failed result in execution context for completeness
+	execCtx.StepResults[step.Name] = result
+
 	return result, lastErr
 }
 
@@ -317,6 +324,30 @@ func (we *WorkflowEngine) executeLLMDisplayStep(ctx context.Context, step Step, 
 	fmt.Println()
 
 	return response.Content, nil
+}
+
+// executeDisplayStep executes a display step that shows static text to the user
+func (we *WorkflowEngine) executeDisplayStep(ctx context.Context, step Step, execCtx *ExecutionContext, previousResults map[string]*StepResult) (interface{}, error) {
+	text, ok := step.Config["text"].(string)
+	if !ok {
+		// Fall back to prompt for backward compatibility
+		text, ok = step.Config["prompt"].(string)
+		if !ok {
+			return nil, fmt.Errorf("text or prompt not specified in display step config")
+		}
+	}
+
+	// Template rendering for text with context variables
+	renderedText, err := we.templateEngine.RenderTemplate(text, previousResults, execCtx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to render display text template: %w", err)
+	}
+
+	// Display the text to the user
+	fmt.Print(renderedText)
+	fmt.Println()
+
+	return renderedText, nil
 }
 
 // executeConditionStep executes a condition step

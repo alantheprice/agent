@@ -36,39 +36,9 @@ func NewTemplateEngine(logger *slog.Logger) *TemplateEngine {
 func (te *TemplateEngine) RenderTemplate(template string, stepResults map[string]*StepResult, execCtx *ExecutionContext) (string, error) {
 	rendered := template
 
-	// Debug: Log available step results
-	te.logger.Info("Template rendering starting",
-		"available_steps", func() []string {
-			var steps []string
-			for stepName, result := range stepResults {
-				status := "failed"
-				if result.Success {
-					status = "success"
-				}
-				steps = append(steps, fmt.Sprintf("%s(%s)", stepName, status))
-			}
-			return steps
-		}(),
-		"template_preview", func() string {
-			if len(template) > 200 {
-				return template[:200] + "..."
-			}
-			return template
-		}())
-
 	// Find all template expressions: {expression}
 	re := regexp.MustCompile(`\{([^}]+)\}`)
 	matches := re.FindAllStringSubmatch(template, -1)
-
-	te.logger.Info("Found template expressions", "count", len(matches), "expressions", func() []string {
-		var exprs []string
-		for _, match := range matches {
-			if len(match) >= 2 {
-				exprs = append(exprs, match[1])
-			}
-		}
-		return exprs
-	}())
 
 	for _, match := range matches {
 		if len(match) < 2 {
@@ -88,7 +58,7 @@ func (te *TemplateEngine) RenderTemplate(template string, stepResults map[string
 		// Convert to string
 		valueStr := te.formatValue(value)
 
-		te.logger.Info("Template substitution successful",
+		te.logger.Debug("Template substitution successful",
 			"expression", expression,
 			"value_type", fmt.Sprintf("%T", value),
 			"value_length", len(valueStr),
