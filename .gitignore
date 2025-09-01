@@ -12,3 +12,6 @@ test_dir
 
 /bin/
 agent-template
+generic-agent
+prompt_optimization/cmd/prompt_optimizer
+prompt_optimization/cmd/prompt_optimizer_advanced
