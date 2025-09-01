@@ -6,6 +6,7 @@ import (
 
 	"github.com/alantheprice/agent/pkg/interfaces"
 	"github.com/alantheprice/agent/pkg/interfaces/types"
+	"github.com/alantheprice/agent/pkg/providers/config"
 )
 
 // Factory provides convenient methods for creating providers
@@ -42,18 +43,41 @@ func (f *Factory) CreateProvider(config *types.ProviderConfig) (interfaces.LLMPr
 
 // CreateProviderByName creates a provider with minimal configuration
 func (f *Factory) CreateProviderByName(name, model, apiKey string) (interfaces.LLMProvider, error) {
-	config := &types.ProviderConfig{
+	providerConfig := &types.ProviderConfig{
 		Name:    name,
 		Model:   model,
 		APIKey:  apiKey,
 		Enabled: true,
 	}
 
-	return f.CreateProvider(config)
+	// Load provider definition to get base URL and other settings
+	if providerDef, err := f.getProviderDefinition(name); err == nil {
+		providerConfig.BaseURL = providerDef.BaseURL
+		if model == "" {
+			providerConfig.Model = providerDef.DefaultModel
+		}
+		if apiKey == "" {
+			providerConfig.APIKey = config.GetAPIKeyForProvider(name)
+		}
+	}
+
+	return f.CreateProvider(providerConfig)
 }
 
 // GetAvailableProviders returns a list of available provider names
 func (f *Factory) GetAvailableProviders() []string {
+	// Try to get from configuration first
+	if providersConfig, err := config.LoadProvidersConfig(); err == nil {
+		providers := make([]string, 0, len(providersConfig.Providers))
+		for name, provider := range providersConfig.Providers {
+			if provider.Enabled {
+				providers = append(providers, name)
+			}
+		}
+		return providers
+	}
+
+	// Fallback to registry
 	return f.registry.ListProviders()
 }
 
@@ -74,11 +98,19 @@ func (f *Factory) ValidateProviderConfig(config *types.ProviderConfig) error {
 // AutoDetectProvider attempts to auto-detect the best available provider
 func (f *Factory) AutoDetectProvider(configs []*types.ProviderConfig) (*types.ProviderConfig, error) {
 	if len(configs) == 0 {
-		return nil, fmt.Errorf("no provider configurations provided")
+		// If no configs provided, try to load from provider definitions
+		return f.autoDetectFromConfiguration()
 	}
 
-	// Priority order for provider selection
-	priorityOrder := []string{"openai", "gemini", "ollama", "groq", "deepinfra"}
+	// Load priority order from configuration
+	providersConfig, err := config.LoadProvidersConfig()
+	var priorityOrder []string
+	if err == nil {
+		priorityOrder = providersConfig.PriorityOrder
+	} else {
+		// Fallback to hardcoded priority
+		priorityOrder = []string{"deepinfra", "deepseek", "cerebras", "gemini", "groq", "ollama", "openai"}
+	}
 
 	// First, try providers in priority order
 	for _, preferredProvider := range priorityOrder {
@@ -132,9 +164,76 @@ func (f *Factory) CreateMultipleProviders(configs []*types.ProviderConfig) (map[
 	return providers, nil
 }
 
+// getProviderDefinition loads a provider definition from the config
+func (f *Factory) getProviderDefinition(name string) (*config.ProviderDefinition, error) {
+	providersConfig, err := config.LoadProvidersConfig()
+	if err != nil {
+		return nil, err
+	}
+
+	providerDef, exists := providersConfig.Providers[name]
+	if !exists {
+		return nil, fmt.Errorf("provider '%s' not found in configuration", name)
+	}
+
+	return &providerDef, nil
+}
+
+// autoDetectFromConfiguration automatically detects the best provider from config
+func (f *Factory) autoDetectFromConfiguration() (*types.ProviderConfig, error) {
+	providersConfig, err := config.LoadProvidersConfig()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load providers configuration: %w", err)
+	}
+
+	// Try providers in priority order
+	for _, providerName := range providersConfig.PriorityOrder {
+		providerDef, exists := providersConfig.Providers[providerName]
+		if !exists || !providerDef.Enabled {
+			continue
+		}
+
+		// Check if API key is available
+		apiKey := config.GetAPIKeyForProvider(providerName)
+		if apiKey == "" {
+			continue
+		}
+
+		// Create configuration from provider definition
+		providerConfig := &types.ProviderConfig{
+			Name:        providerName,
+			BaseURL:     providerDef.BaseURL,
+			APIKey:      apiKey,
+			Model:       providerDef.DefaultModel,
+			Enabled:     true,
+			Temperature: 0.7,
+			MaxTokens:   providerDef.Capabilities.MaxTokens,
+		}
+
+		// Validate the configuration
+		if err := f.ValidateProviderConfig(providerConfig); err == nil {
+			return providerConfig, nil
+		}
+	}
+
+	return nil, fmt.Errorf("no valid provider configurations found in system configuration")
+}
+
 // GetProviderCapabilities returns the capabilities of a provider
 func (f *Factory) GetProviderCapabilities(providerName string) (*ProviderCapabilities, error) {
-	// This would typically be loaded from configuration or metadata
+	// Try to load from configuration first
+	if providerDef, err := f.getProviderDefinition(providerName); err == nil {
+		return &ProviderCapabilities{
+			Name:            providerDef.Name,
+			SupportsTools:   providerDef.Capabilities.SupportsTools,
+			SupportsImages:  providerDef.Capabilities.SupportsImages,
+			SupportsStream:  providerDef.Capabilities.SupportsStream,
+			MaxTokens:       providerDef.Capabilities.MaxTokens,
+			SupportedModels: providerDef.SupportedModels,
+		}, nil
+	}
+
+	// Fallback to hardcoded capabilities
 	capabilities := getDefaultCapabilities(providerName)
 	if capabilities == nil {
 		return nil, fmt.Errorf("unknown provider: %s", providerName)

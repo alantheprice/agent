@@ -13,6 +13,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	providerConfig "github.com/alantheprice/agent/pkg/providers/config"
 )
 
 // LLMClient handles interactions with LLM providers
@@ -37,14 +39,11 @@ func (llm *LLMClient) GetConfig() LLMConfig {
 
 // NewLLMClient creates a new LLM client
 func NewLLMClient(config LLMConfig, logger *slog.Logger) (*LLMClient, error) {
-	// Resolve API key from layered config first, then environment if not provided
+	// Resolve API key using the new configuration system
 	if config.APIKey == "" {
-		config.APIKey = getAPIKeyFromConfig(config.Provider)
-		logger.Debug("API key from config", "provider", config.Provider, "found", config.APIKey != "")
-		if config.APIKey == "" {
-			config.APIKey = getAPIKeyFromEnv(config.Provider)
-			logger.Debug("API key from env", "provider", config.Provider, "found", config.APIKey != "")
-		}
+		apiKey := providerConfig.GetAPIKeyForProvider(config.Provider)
+		config.APIKey = apiKey
+		logger.Debug("API key from new config system", "provider", config.Provider, "found", config.APIKey != "")
 
 		// If still no API key, prompt user to enter one
 		if config.APIKey == "" {
@@ -136,12 +135,12 @@ func newLayeredProvider() configProvider {
 
 // Simple config provider interface for our needs
 type configProvider interface {
-	GetProviderConfig(providerName string) (*providerConfig, error)
+	GetProviderConfig(providerName string) (*legacyProviderConfig, error)
 	ReloadConfig() error
 }
 
 // Simple provider config struct
-type providerConfig struct {
+type legacyProviderConfig struct {
 	APIKey string `json:"api_key"`
 	Name   string `json:"name"`
 	Model  string `json:"model"`
@@ -156,14 +155,14 @@ func (s *simpleConfigProvider) ReloadConfig() error {
 	return nil // Already loaded in constructor
 }
 
-func (s *simpleConfigProvider) GetProviderConfig(providerName string) (*providerConfig, error) {
+func (s *simpleConfigProvider) GetProviderConfig(providerName string) (*legacyProviderConfig, error) {
 	// Look for providers.{providerName} in config
 	providersKey := "providers"
 	if providers, exists := s.config[providersKey]; exists {
 		if providersMap, ok := providers.(map[string]interface{}); ok {
 			if providerData, exists := providersMap[providerName]; exists {
 				if providerMap, ok := providerData.(map[string]interface{}); ok {
-					config := &providerConfig{Name: providerName}
+					config := &legacyProviderConfig{Name: providerName}
 					if apiKey, exists := providerMap["api_key"]; exists {
 						if keyStr, ok := apiKey.(string); ok {
 							config.APIKey = keyStr

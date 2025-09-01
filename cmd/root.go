@@ -3,6 +3,7 @@
 package cmd
 
 import (
+	"github.com/alantheprice/agent/pkg/providers"
 	"github.com/spf13/cobra"
 )
 
@@ -36,6 +37,9 @@ func Execute() error {
 }
 
 func init() {
+	// Register all default providers
+	providers.MustRegisterDefaultProviders()
+	
 	// Add the process command - the core of the generic agent framework
 	rootCmd.AddCommand(processCmd)
 }
