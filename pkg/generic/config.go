@@ -74,12 +74,20 @@ type Trigger struct {
 	Priority   int      `json:"priority"`
 }
 
+// StepCondition defines conditions for step execution
+type StepCondition struct {
+	Field    string `json:"field" validate:"required"`
+	Operator string `json:"operator" validate:"required"`
+	Value    string `json:"value" validate:"required"`
+}
+
 // Step defines a workflow step
 type Step struct {
 	Name              string                 `json:"name" validate:"required"`
 	Type              string                 `json:"type" validate:"required"`
 	Config            map[string]interface{} `json:"config,omitempty"`
 	DependsOn         []string               `json:"depends_on,omitempty"`
+	Conditions        []StepCondition        `json:"conditions,omitempty"`
 	Retry             RetryConfig            `json:"retry,omitempty"`
 	ContinueOnError   bool                   `json:"continue_on_error"`
 	ContextTransforms []Transform            `json:"context_transforms,omitempty"`

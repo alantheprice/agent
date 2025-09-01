@@ -359,7 +359,13 @@ func (tr *ToolRegistry) executeAskUser(ctx context.Context, params map[string]in
 			if err := scanner.Err(); err != nil {
 				errorChan <- err
 			} else {
-				errorChan <- fmt.Errorf("input stream closed")
+				// Handle stream closed gracefully with default response
+				defaultResponse, hasDefault := params["default_response"].(string)
+				if hasDefault {
+					inputChan <- defaultResponse
+				} else {
+					errorChan <- fmt.Errorf("input stream closed")
+				}
 			}
 		}
 	}()

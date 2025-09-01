@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/exec"
+	"strings"
 	"time"
 )
 
@@ -115,6 +116,24 @@ func (we *WorkflowEngine) Execute(ctx context.Context, workflow *Workflow, execC
 
 // executeStep executes a single workflow step
 func (we *WorkflowEngine) executeStep(ctx context.Context, step Step, execCtx *ExecutionContext, previousResults map[string]*StepResult) (*StepResult, error) {
+	// Check conditions before executing
+	if len(step.Conditions) > 0 {
+		conditionsMet, err := we.evaluateStepConditions(step.Conditions, previousResults, execCtx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to evaluate step conditions for %s: %w", step.Name, err)
+		}
+		if !conditionsMet {
+			we.logger.Info("Step conditions not met, skipping", "step", step.Name)
+			return &StepResult{
+				StepName:      step.Name,
+				Success:       true,
+				Output:        "skipped - conditions not met",
+				ExecutionTime: 0,
+				Metadata:      map[string]interface{}{"skipped": true},
+			}, nil
+		}
+	}
+
 	we.logger.Info("Executing step", "step", step.Name, "type", step.Type)
 
 	startTime := time.Now()
@@ -212,10 +231,21 @@ func (we *WorkflowEngine) executeToolStep(ctx context.Context, step Step, execCt
 	// Prepare parameters by merging step config and context data
 	params := make(map[string]interface{})
 
-	// Add step config parameters
+	// Add step config parameters with template processing
 	if stepParams, ok := step.Config["params"].(map[string]interface{}); ok {
 		for k, v := range stepParams {
-			params[k] = v
+			// Process string values through template engine
+			if stringVal, ok := v.(string); ok {
+				renderedVal, err := we.templateEngine.RenderTemplate(stringVal, previousResults, execCtx)
+				if err != nil {
+					we.logger.Warn("Failed to render template in tool parameter", "step", step.Name, "param", k, "error", err)
+					params[k] = v // Use original value if template fails
+				} else {
+					params[k] = renderedVal
+				}
+			} else {
+				params[k] = v
+			}
 		}
 	}
 
@@ -466,6 +496,83 @@ func (we *WorkflowEngine) executeScriptStep(ctx context.Context, step Step, exec
 		"output_length", len(output))
 
 	return string(output), nil
+}
+
+// evaluateStepConditions evaluates conditions for a step to determine if it should execute
+func (we *WorkflowEngine) evaluateStepConditions(conditions []StepCondition, previousResults map[string]*StepResult, execCtx *ExecutionContext) (bool, error) {
+	if len(conditions) == 0 {
+		return true, nil
+	}
+
+	// All conditions must be met (AND logic)
+	for _, condition := range conditions {
+		met, err := we.evaluateSingleCondition(condition, previousResults, execCtx)
+		if err != nil {
+			return false, fmt.Errorf("failed to evaluate condition %s %s %s: %w", condition.Field, condition.Operator, condition.Value, err)
+		}
+		if !met {
+			we.logger.Debug("Condition not met", "field", condition.Field, "operator", condition.Operator, "value", condition.Value)
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
+// evaluateSingleCondition evaluates a single condition
+func (we *WorkflowEngine) evaluateSingleCondition(condition StepCondition, previousResults map[string]*StepResult, execCtx *ExecutionContext) (bool, error) {
+	// Get the field value from previous results
+	var fieldValue interface{}
+
+	// Check if the field exists in previous results
+	if result, exists := previousResults[condition.Field]; exists {
+		fieldValue = result.Output
+
+		// Handle tool outputs that return maps (like ask_user)
+		if outputMap, ok := fieldValue.(map[string]interface{}); ok {
+			if response, hasResponse := outputMap["response"]; hasResponse {
+				fieldValue = response
+			}
+		}
+	} else {
+		// Field doesn't exist, treat as empty
+		fieldValue = ""
+	}
+
+	// Convert to string for comparison
+	fieldStr := fmt.Sprintf("%v", fieldValue)
+
+	// Log condition evaluation for debugging
+	we.logger.Debug("Evaluating condition",
+		"field", condition.Field,
+		"operator", condition.Operator,
+		"expected", condition.Value,
+		"actual", fieldStr)
+
+	// Evaluate based on operator
+	result := false
+	switch condition.Operator {
+	case "equals":
+		result = fieldStr == condition.Value
+	case "not_equals":
+		result = fieldStr != condition.Value
+	case "contains":
+		result = strings.Contains(fieldStr, condition.Value)
+	case "not_contains":
+		result = !strings.Contains(fieldStr, condition.Value)
+	case "empty":
+		result = fieldStr == ""
+	case "not_empty":
+		result = fieldStr != ""
+	default:
+		return false, fmt.Errorf("unsupported operator: %s", condition.Operator)
+	}
+
+	we.logger.Debug("Condition evaluation result",
+		"field", condition.Field,
+		"result", result)
+
+	return result, nil
 }
 
 // Legacy renderTemplate function - now handled by TemplateEngine

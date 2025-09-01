@@ -18,6 +18,8 @@ var (
 	dryRun        bool
 	skipPrompt    bool
 	model         string
+	debug         bool
+	verbose       bool
 )
 
 // processCmd represents the process command
@@ -89,8 +91,24 @@ func runMultiAgentProcess(processFilePath string) error {
 		return fmt.Errorf("failed to load agent config: %w", err)
 	}
 
-	// Create logger
-	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	// Create logger with configurable level
+	logLevel := slog.LevelWarn // Default to warn level (minimal output)
+
+	// Check command line flags first
+	if debug {
+		logLevel = slog.LevelDebug
+	} else if verbose {
+		logLevel = slog.LevelInfo
+	} else {
+		// Check environment variables as fallback
+		if debugFlag := os.Getenv("DEBUG"); debugFlag == "true" || debugFlag == "1" {
+			logLevel = slog.LevelDebug
+		} else if verboseFlag := os.Getenv("VERBOSE"); verboseFlag == "true" || verboseFlag == "1" {
+			logLevel = slog.LevelInfo
+		}
+	}
+
+	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: logLevel}))
 
 	// Create and execute agent
 	agent, err := generic.NewAgent(config, logger)
@@ -168,4 +186,6 @@ func init() {
 	processCmd.Flags().StringVar(&statePath, "state", "", "Path to orchestration state file (default .ledit/orchestration_state.json)")
 	processCmd.Flags().BoolVar(&noProgress, "no-progress", false, "Suppress progress table output during orchestration")
 	processCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Validate process file without executing")
+	processCmd.Flags().BoolVar(&debug, "debug", false, "Enable debug logging")
+	processCmd.Flags().BoolVar(&verbose, "verbose", false, "Enable verbose logging")
 }
