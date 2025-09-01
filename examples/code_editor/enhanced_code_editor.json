@@ -1,0 +1,295 @@
+{
+  "agent": {
+    "name": "Enhanced LLM Code Editor",
+    "description": "Advanced AI-powered code editor with multi-step analysis, context-aware editing, and comprehensive validation",
+    "version": "2.0.0",
+    "goals": [
+      "Understand user requirements with detailed analysis",
+      "Map codebase structure and relationships", 
+      "Select relevant files using semantic and structural analysis",
+      "Perform context-aware code editing with validation",
+      "Provide comprehensive testing and rollback capabilities"
+    ],
+    "capabilities": [
+      "Multi-step requirement analysis and planning",
+      "Codebase structure mapping and dependency analysis",
+      "Context-aware file selection (primary + supporting files)",
+      "Incremental editing with per-file validation",
+      "Comprehensive testing and quality checks",
+      "Change summarization and rollback planning"
+    ],
+    "max_iterations": 100,
+    "timeout": "45m",
+    "interactive": true
+  },
+  "llm": {
+    "provider": "deepinfra",
+    "model": "deepseek-ai/DeepSeek-V3.1",
+    "temperature": 0.1,
+    "max_tokens": 4000,
+    "system_prompt": "You are an expert software engineer and code editor AI with deep understanding of:\n\n1. **Code Architecture**: Understanding file relationships, dependencies, and system design\n2. **Context Analysis**: Reading and understanding existing code before making changes\n3. **Incremental Development**: Making small, focused changes that build upon each other\n4. **Quality Assurance**: Ensuring changes maintain code quality, style, and functionality\n5. **Risk Management**: Identifying potential impacts and providing rollback strategies\n\n**CRITICAL RULES:**\n- ALWAYS read and understand existing code completely before editing\n- Make minimal, focused changes that address specific requirements\n- Validate each change before proceeding to the next\n- Maintain existing code style and patterns\n- Provide clear explanations for each modification\n\nFocus on precision, safety, and maintainability in all code modifications."
+  },
+  "embeddings": {
+    "provider": "deepinfra",
+    "model": "Qwen/Qwen3-Embedding-4B",
+    "chunk_size": 800,
+    "batch_size": 10
+  },
+  "data_sources": [
+    {
+      "name": "codebase_embeddings",
+      "type": "embedding",
+      "config": {
+        "storage_dir": "./embeddings_cache",
+        "source_paths": ["./"],
+        "file_patterns": ["*.go", "*.js", "*.ts", "*.tsx", "*.py", "*.java", "*.cpp", "*.c", "*.h", "*.cs", "*.rb", "*.php", "*.swift", "*.kt", "*.rs", "*.vue", "*.jsx", "*.json", "*.yaml", "*.yml", "*.md"],
+        "exclude_patterns": [
+          "node_modules/**", ".git/**", "vendor/**", "dist/**", "build/**", 
+          "*.min.js", "*.map", ".claude/**", ".vscode/**", ".idea/**", 
+          "*.log", "tmp/**", "temp/**", "embeddings_cache/**", 
+          "coverage.*", "*.test", "*.spec.*", ".DS_Store"
+        ],
+        "refresh_interval": "2h",
+        "metadata": {
+          "purpose": "enhanced_code_editing"
+        }
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "name": "enhanced_code_editor_workflow",
+      "description": "Comprehensive code editing workflow with multi-step analysis and validation",
+      "steps": [
+        {
+          "name": "welcome_and_setup",
+          "type": "display",
+          "config": {
+            "text": "# Enhanced LLM Code Editor v2.0\n\n🎯 **Advanced Code Editing Workflow**\n\nThis enhanced editor will:\n1. **Analyze** your requirements in detail\n2. **Map** your codebase structure and relationships  \n3. **Select** relevant files intelligently\n4. **Edit** code incrementally with validation\n5. **Test** changes comprehensively\n6. **Summarize** all modifications made\n\nLet's begin with understanding your requirements..."
+          },
+          "timeout": "2s"
+        },
+        {
+          "name": "collect_detailed_requirements",
+          "type": "tool",
+          "config": {
+            "tool": "ask_user",
+            "params": {
+              "question": "📝 **Detailed Requirements Collection**\n\nPlease provide comprehensive details about the code changes you need:\n\n1. **What functionality** do you want to add/modify/fix?\n2. **Which components** or modules should be affected?\n3. **Any specific constraints** or requirements?\n4. **Expected behavior** after the changes?\n5. **Any files you think** might be relevant?\n\nThe more detail you provide, the better I can help:",
+              "timeout": 600
+            }
+          },
+          "depends_on": ["welcome_and_setup"],
+          "timeout": "10m"
+        },
+        {
+          "name": "build_codebase_embeddings", 
+          "type": "tool",
+          "config": {
+            "tool": "embedding_ingest",
+            "params": {
+              "source_name": "codebase_embeddings"
+            }
+          },
+          "depends_on": ["welcome_and_setup"],
+          "timeout": "5m"
+        },
+        {
+          "name": "analyze_codebase_structure",
+          "type": "llm",
+          "config": {
+            "prompt": "Analyze the codebase structure to understand the project layout and key components:\n\nUser Requirements: {collect_detailed_requirements.response}\n\nBased on the requirements, identify:\n\n1. **Project Type**: What kind of project is this? (web app, CLI tool, library, etc.)\n2. **Key Directories**: What are the main code directories and their purposes?\n3. **Entry Points**: What are the main entry points or starting files?\n4. **Architecture Pattern**: What architectural patterns are used?\n5. **Technology Stack**: What languages, frameworks, and tools are involved?\n6. **Likely Impact Areas**: Which parts of the codebase will likely need changes?\n\nProvide your analysis as a structured assessment to guide file selection."
+          },
+          "depends_on": ["collect_detailed_requirements"],
+          "timeout": "3m"
+        },
+        {
+          "name": "search_primary_files",
+          "type": "tool", 
+          "config": {
+            "tool": "embedding_search",
+            "params": {
+              "query": "{collect_detailed_requirements.response}",
+              "source_name": "codebase_embeddings",
+              "limit": 5,
+              "min_similarity": 0.3
+            }
+          },
+          "depends_on": ["build_codebase_embeddings", "collect_detailed_requirements"],
+          "timeout": "2m"
+        },
+        {
+          "name": "identify_supporting_files",
+          "type": "llm",
+          "config": {
+            "prompt": "Based on the primary files found and codebase analysis, identify supporting files that provide important context:\n\nPrimary Files Found: {search_primary_files.results}\nCodebase Analysis: {analyze_codebase_structure}\nUser Requirements: {collect_detailed_requirements.response}\n\nFor each primary file, consider:\n1. **Import/Dependencies**: What files does it import or depend on?\n2. **Interface Files**: Are there related interfaces, types, or contracts?\n3. **Configuration Files**: Are there config files that affect behavior?\n4. **Test Files**: Are there tests that show expected usage?\n5. **Documentation**: Are there README or doc files explaining the component?\n\nList 3-5 additional supporting files that would provide crucial context for making safe, informed edits. Focus on files that will help understand how the primary files integrate with the broader system.\n\nRespond with just the file paths, one per line."
+          },
+          "depends_on": ["search_primary_files", "analyze_codebase_structure"],
+          "timeout": "2m"
+        },
+        {
+          "name": "create_editing_plan",
+          "type": "llm",
+          "config": {
+            "prompt": "Create a detailed editing plan based on all the analysis:\n\nUser Requirements: {collect_detailed_requirements.response}\nCodebase Structure: {analyze_codebase_structure}\nPrimary Files: {search_primary_files.results}\nSupporting Files: {identify_supporting_files}\n\nCreate a step-by-step editing plan:\n\n1. **File Reading Order**: Which files should be read first to understand context?\n2. **Editing Sequence**: What order should files be edited in?\n3. **Change Scope**: What specific changes are needed in each file?\n4. **Validation Points**: After which changes should we test/validate?\n5. **Risk Assessment**: What could go wrong and how to mitigate?\n6. **Rollback Strategy**: How to undo changes if needed?\n\nFormat as a clear, actionable plan with numbered steps."
+          },
+          "depends_on": ["identify_supporting_files"],
+          "timeout": "3m"
+        },
+        {
+          "name": "confirm_editing_plan",
+          "type": "tool",
+          "config": {
+            "tool": "ask_user", 
+            "params": {
+              "question": "📋 **Editing Plan Review**\n\n{create_editing_plan}\n\n**Files to be modified:**\n{search_primary_files.results}\n\n**Supporting context files:**\n{identify_supporting_files}\n\nDo you want to proceed with this plan? Options:\n- **y**: Proceed with the plan as outlined\n- **m**: Modify the plan (you'll be asked what to change)\n- **n**: Cancel and exit\n\nYour choice:",
+              "default_response": "y"
+            }
+          },
+          "depends_on": ["create_editing_plan"],
+          "timeout": "10m"
+        },
+        {
+          "name": "read_context_files",
+          "type": "llm",
+          "config": {
+            "prompt": "Read and analyze all relevant files to understand the current codebase before making any changes.\n\nEditing Plan: {create_editing_plan}\nPrimary Files: {search_primary_files.results}\nSupporting Files: {identify_supporting_files}\nUser Confirmation: {confirm_editing_plan.response}\n\n**CRITICAL TASK**: Use the read_file tool to read each file that will provide context for the editing task. This includes:\n1. All primary files that will be edited\n2. All supporting files for context\n3. Any additional files mentioned in the editing plan\n\n**For each file you read:**\n1. Use read_file tool to get the complete contents\n2. Analyze its structure, purpose, and key functions\n3. Note how it relates to the user requirements\n4. Identify specific sections that may need changes\n\n**IMPORTANT**: You MUST read files before proceeding to edit them. Start with the most important contextual files first.\n\nBegin reading files now using the available tools."
+          },
+          "depends_on": ["confirm_editing_plan"],
+          "conditions": [
+            {
+              "field": "confirm_editing_plan",
+              "operator": "contains", 
+              "value": "y"
+            }
+          ],
+          "timeout": "10m"
+        },
+        {
+          "name": "execute_incremental_edits",
+          "type": "llm",
+          "config": {
+            "prompt": "Now execute the editing plan incrementally, making one focused change at a time.\n\nContext from previous step: {read_context_files}\nEditing Plan: {create_editing_plan}\nUser Requirements: {collect_detailed_requirements.response}\n\n**INCREMENTAL EDITING PROCESS:**\n\n1. **For each file that needs editing:**\n   - First, use read_file to get current contents (if not already read)\n   - Identify the specific changes needed\n   - Make minimal, focused edits using write_file\n   - Validate the changes make sense in context\n\n2. **For each edit:**\n   - Maintain existing code style and patterns\n   - Add appropriate comments where helpful\n   - Ensure the change addresses the user requirements\n   - Make atomic changes that can be easily reviewed\n\n3. **Change Documentation:**\n   - Keep track of what you change and why\n   - Note any potential side effects\n   - Identify what needs testing\n\n**Start with the first file in your editing plan and make the necessary changes.**"
+          },
+          "depends_on": ["read_context_files"],
+          "timeout": "20m"
+        },
+        {
+          "name": "validate_syntax_and_structure",
+          "type": "tool",
+          "config": {
+            "tool": "shell_command",
+            "params": {
+              "command": "# Comprehensive validation script\necho \"🔍 Validating code changes...\"\n\n# Language-specific validation\nif [ -f \"go.mod\" ]; then\n  echo \"📝 Go project detected - running validation...\"\n  go fmt ./... && echo \"✅ Go formatting OK\" || echo \"❌ Go formatting issues\"\n  go vet ./... && echo \"✅ Go vet OK\" || echo \"❌ Go vet issues\"  \n  go build -v ./... && echo \"✅ Go build OK\" || echo \"❌ Go build failed\"\n  \nelif [ -f \"package.json\" ]; then\n  echo \"📝 Node.js project detected - running validation...\"\n  if command -v npm >/dev/null 2>&1; then\n    npm run lint 2>/dev/null && echo \"✅ Linting OK\" || echo \"⚠️ Linting issues or no lint script\"\n    npm run build 2>/dev/null && echo \"✅ Build OK\" || echo \"⚠️ Build issues or no build script\"\n  fi\n  \nelif [ -f \"requirements.txt\" ] || [ -f \"setup.py\" ] || [ -f \"pyproject.toml\" ]; then\n  echo \"📝 Python project detected - running validation...\"\n  python -m py_compile **/*.py 2>/dev/null && echo \"✅ Python syntax OK\" || echo \"❌ Python syntax errors\"\n  if command -v flake8 >/dev/null 2>&1; then\n    flake8 --select=E9,F63,F7,F82 . && echo \"✅ Critical linting OK\" || echo \"❌ Critical linting issues\"\n  fi\n  \nelse\n  echo \"✅ General validation complete - no specific language tools detected\"\nfi\n\necho \"\\n📊 Validation summary complete.\"",
+              "timeout": 120
+            }
+          },
+          "depends_on": ["execute_incremental_edits"],
+          "timeout": "3m"
+        },
+        {
+          "name": "run_targeted_tests",
+          "type": "tool",
+          "config": {
+            "tool": "shell_command",
+            "params": {
+              "command": "# Run relevant tests based on project type\necho \"🧪 Running targeted tests...\"\n\nif [ -f \"go.mod\" ]; then\n  echo \"Running Go tests...\"\n  go test -v ./... -timeout=60s && echo \"✅ All Go tests passed\" || echo \"❌ Some Go tests failed\"\n  \nelif [ -f \"package.json\" ]; then\n  echo \"Running Node.js tests...\"\n  if npm test --dry-run >/dev/null 2>&1; then\n    timeout 120s npm test && echo \"✅ All tests passed\" || echo \"❌ Some tests failed or timed out\"\n  else\n    echo \"⚠️ No test script configured\"\n  fi\n  \nelif [ -f \"pytest.ini\" ] || [ -d \"tests\" ] || find . -name \"test_*.py\" | head -1 | grep -q .; then\n  echo \"Running Python tests...\"\n  if command -v pytest >/dev/null 2>&1; then\n    timeout 120s pytest -v && echo \"✅ All pytest tests passed\" || echo \"❌ Some pytest tests failed\"\n  elif command -v python >/dev/null 2>&1; then\n    timeout 120s python -m unittest discover && echo \"✅ All unittest tests passed\" || echo \"❌ Some unittest tests failed\"\n  fi\n  \nelse\n  echo \"ℹ️ No test framework detected - manual testing recommended\"\nfi\n\necho \"\\n🎯 Test execution complete.\"",
+              "timeout": 180
+            }
+          },
+          "depends_on": ["validate_syntax_and_structure"],
+          "timeout": "5m"
+        },
+        {
+          "name": "generate_change_summary",
+          "type": "llm_display",
+          "config": {
+            "prompt": "Generate a comprehensive summary of all changes made during this code editing session:\n\nOriginal Requirements: {collect_detailed_requirements.response}\nEditing Plan: {create_editing_plan}\nChanges Made: {execute_incremental_edits}\nValidation Results: {validate_syntax_and_structure.output}\nTest Results: {run_targeted_tests.output}\n\nProvide a detailed summary including:\n\n## 📝 **Changes Summary**\n### Requirements Addressed\n- List the original requirements and how they were addressed\n\n### Files Modified\n- List each file changed with a brief description of modifications\n- Include before/after key differences\n\n### New Functionality Added\n- Describe any new features or capabilities added\n- Explain how they integrate with existing code\n\n### Code Quality & Standards\n- Confirm adherence to existing code style and patterns\n- Note any improvements made to code structure or documentation\n\n## 🧪 **Validation Results**\n### Syntax & Structure\n- Report on code formatting, linting, and compilation results\n- Highlight any issues found and their resolution status\n\n### Test Coverage\n- Report on test execution results\n- Identify any new tests needed or existing tests affected\n\n## 📋 **Next Steps & Recommendations**\n### Immediate Actions\n- Any manual testing recommended\n- Additional validation suggested\n\n### Future Improvements\n- Potential enhancements or optimizations identified\n- Technical debt or refactoring opportunities\n\n## 🔄 **Rollback Information**\n### Recovery Strategy\n- How to undo changes if issues arise\n- Which files were modified and could be reverted\n\nProvide this as a comprehensive, well-formatted report."
+          },
+          "depends_on": ["run_targeted_tests"],
+          "timeout": "5m"
+        },
+        {
+          "name": "final_user_confirmation",
+          "type": "tool",
+          "config": {
+            "tool": "ask_user",
+            "params": {
+              "question": "✅ **Code Editing Session Complete**\n\nAll changes have been made and validated. \n\n**Summary of changes:**\n{generate_change_summary}\n\n**Final Options:**\n- **accept**: Accept all changes as final\n- **test**: You'll manually test before accepting  \n- **rollback**: Provide guidance on rolling back changes\n- **modify**: Request additional modifications\n\nWhat would you like to do?",
+              "default_response": "accept",
+              "timeout": 600
+            }
+          },
+          "depends_on": ["generate_change_summary"],
+          "timeout": "10m"
+        }
+      ]
+    }
+  ],
+  "tools": {
+    "read_file": {
+      "enabled": true,
+      "timeout": "30s",
+      "description": "Read complete contents of files - REQUIRED before any edits"
+    },
+    "write_file": {
+      "enabled": true, 
+      "timeout": "30s",
+      "description": "Write modified content to files after analysis"
+    },
+    "list_files": {
+      "enabled": true,
+      "timeout": "30s", 
+      "description": "List directory contents for exploration"
+    },
+    "shell_command": {
+      "enabled": true,
+      "timeout": "180s",
+      "description": "Execute commands for validation, testing, and analysis"
+    },
+    "ask_user": {
+      "enabled": true,
+      "timeout": "600s",
+      "description": "Interactive user input and confirmations"
+    },
+    "embedding_ingest": {
+      "enabled": true,
+      "timeout": "300s",
+      "description": "Build semantic embeddings of codebase"
+    },
+    "embedding_search": {
+      "enabled": true,
+      "timeout": "60s", 
+      "description": "Search code files using semantic similarity"
+    },
+    "json_parse": {
+      "enabled": true,
+      "timeout": "10s",
+      "description": "Parse structured data responses"
+    }
+  },
+  "output": {
+    "format": "structured",
+    "fields": {
+      "requirements_analysis": "string",
+      "codebase_structure": "string",
+      "files_modified": "array", 
+      "changes_summary": "string",
+      "validation_results": "string",
+      "test_results": "string",
+      "rollback_plan": "string",
+      "recommendations": "string"
+    },
+    "destination": "stdout"
+  },
+  "budget": {
+    "max_tokens": 500000,
+    "max_cost": 15.00,
+    "warn_at_percentage": 80
+  },
+  "security": {
+    "allowed_paths": ["./", "../", "/tmp"],
+    "allowed_commands": ["go", "npm", "yarn", "python", "python3", "pytest", "node", "bash", "sh", "git", "cat", "ls", "find", "grep", "flake8"],
+    "max_file_size": "5MB"
+  }
+}

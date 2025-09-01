@@ -1,0 +1,234 @@
+{
+  "agent": {
+    "name": "LLM Code Editor",
+    "description": "AI agent that asks what code changes to make, builds embeddings for workspace files, selects relevant files using semantic search, and performs intelligent edits with tool use",
+    "version": "1.0.0",
+    "goals": [
+      "Collect user requirements for code changes",
+      "Build embeddings for workspace files in parallel",
+      "Use semantic search to select 3 most relevant files to edit",
+      "Perform agentic code editing with full file reading requirement",
+      "Apply edits using available tools with validation"
+    ],
+    "capabilities": [
+      "Natural language code change understanding",
+      "Semantic file selection using embeddings",
+      "Parallel workflow execution for efficiency", 
+      "Tool-based file reading and editing",
+      "Validation of edit requirements",
+      "Interactive user feedback"
+    ],
+    "max_iterations": 50,
+    "timeout": "30m",
+    "interactive": true
+  },
+  "llm": {
+    "provider": "deepinfra",
+    "model": "deepseek-ai/DeepSeek-V3.1",
+    "temperature": 0.2,
+    "max_tokens": 4000,
+    "system_prompt": "You are an expert software engineer and code editor AI. Your expertise includes:\n\n1. **Code Understanding**: Analyzing codebases and understanding file relationships\n2. **Semantic Search**: Using embeddings to find relevant code files based on user requirements\n3. **File Editing**: Making precise, targeted edits to code files\n4. **Tool Usage**: Leveraging available tools for reading files, making edits, and validation\n5. **Safety**: Always reading full files before making any edits\n\nIMPORTANT SAFETY RULES:\n- NEVER edit a file without first reading its complete contents using the read_file tool\n- Always understand the full context of a file before making changes\n- Make precise, minimal changes that address the user's requirements\n- Validate changes whenever possible\n\nBe thorough, precise, and always prioritize code quality and safety."
+  },
+  "embeddings": {
+    "provider": "deepinfra",
+    "model": "Qwen/Qwen3-Embedding-4B",
+    "chunk_size": 1000,
+    "batch_size": 10
+  },
+  "data_sources": [
+    {
+      "name": "workspace_embeddings",
+      "type": "embedding",
+      "config": {
+        "storage_dir": "./embeddings_cache",
+        "source_paths": ["./"],
+        "file_patterns": ["*.go", "*.md", "*.json", "*.yaml", "*.yml"],
+        "exclude_patterns": ["node_modules/**", ".git/**", "vendor/**", "dist/**", "build/**", "*.min.js", "*.map", ".claude/**", ".vscode/**", ".idea/**", "*.log", "tmp/**", "temp/**", "embeddings_cache/**", "coverage.out", "coverage.html"],
+        "refresh_interval": "1h",
+        "metadata": {
+          "purpose": "code_editing_context"
+        }
+      }
+    }
+  ],
+  "workflows": [
+    {
+      "name": "llm_code_editor_workflow",
+      "description": "Complete code editing workflow: collect requirements, build embeddings, select files, and edit",
+      "steps": [
+        {
+          "name": "welcome_message",
+          "type": "display",
+          "config": {
+            "text": "# LLM Code Editor\n\nI'm an AI code editor that can help you make intelligent changes to your codebase.\nI'll:\n1. Understand what changes you want to make\n2. Analyze your workspace files using embeddings\n3. Select the 3 most relevant files to edit\n4. Make precise edits with full file analysis\n\nLet's get started!"
+          },
+          "timeout": "2s"
+        },
+        {
+          "name": "collect_user_requirements",
+          "type": "tool",
+          "config": {
+            "tool": "ask_user",
+            "params": {
+              "question": "What code changes would you like me to make? Please describe the functionality, features, or fixes you need:",
+              "timeout": 300
+            }
+          },
+          "depends_on": ["welcome_message"],
+          "timeout": "5m"
+        },
+        {
+          "name": "build_workspace_embeddings",
+          "type": "tool",
+          "config": {
+            "tool": "embedding_ingest",
+            "params": {
+              "source_name": "workspace_embeddings"
+            }
+          },
+          "depends_on": ["welcome_message"],
+          "timeout": "2m"
+        },
+        {
+          "name": "analyze_requirements",
+          "type": "llm",
+          "config": {
+            "prompt": "Analyze the user's code change requirements and extract key search terms:\\n\\nUser Requirements: {collect_user_requirements.response}\\n\\nBased on these requirements, generate search terms that would help find the most relevant files to edit. Focus on:\\n1. Technical concepts and keywords\\n2. File types and patterns\\n3. Component or module names\\n4. Command-related terms\\n\\nRespond with just the search terms separated by spaces (no JSON, no formatting):"
+          },
+          "depends_on": ["collect_user_requirements"],
+          "timeout": "2m"
+        },
+        {
+          "name": "select_relevant_files",
+          "type": "tool",
+          "config": {
+            "tool": "embedding_search",
+            "params": {
+              "query": "{analyze_requirements}",
+              "source_name": "workspace_embeddings", 
+              "limit": 3,
+              "min_similarity": 0.3
+            }
+          },
+          "depends_on": ["build_workspace_embeddings", "analyze_requirements"],
+          "timeout": "2m"
+        },
+        {
+          "name": "confirm_file_selection",
+          "type": "tool",
+          "config": {
+            "tool": "ask_user",
+            "params": {
+              "question": "I've selected these files for editing based on your requirements:\n\n{select_relevant_files}\n\nDo you want to proceed with editing these files? (y/n/modify):",
+              "default_response": "y"
+            }
+          },
+          "depends_on": ["select_relevant_files"],
+          "timeout": "5m"
+        },
+        {
+          "name": "perform_code_editing",
+          "type": "llm",
+          "config": {
+            "prompt": "You are now going to edit code files based on the user's requirements. Follow these steps:\n\nUser Requirements: {collect_user_requirements.response}\nAnalysis: {analyze_requirements}\nSelected Files: {select_relevant_files}\nUser Confirmation: {confirm_file_selection.response}\n\n**MANDATORY SAFETY RULE**: Before editing ANY file, you MUST first use the read_file tool to read its complete contents. Never make edits without understanding the full file context.\n\n**Your task:**\n1. For each selected file, use read_file tool to read its complete contents\n2. Analyze the code structure and understand how to implement the changes\n3. Use write_file tool to make the necessary edits\n4. Ensure changes are minimal, precise, and maintain code quality\n5. Provide a summary of what was changed and why\n\n**Available Tools:**\n- read_file: Read complete file contents\n- write_file: Write modified file contents \n- shell_command: Run commands for validation/testing\n- list_files: List directory contents if needed\n\nStart by reading the first file and proceed systematically through each file."
+          },
+          "depends_on": ["confirm_file_selection"],
+          "conditions": [
+            {
+              "field": "confirm_file_selection",
+              "operator": "contains",
+              "value": "y"
+            }
+          ],
+          "timeout": "15m",
+          "retry_count": 2
+        },
+        {
+          "name": "validate_changes",
+          "type": "tool",
+          "config": {
+            "tool": "shell_command",
+            "params": {
+              "command": "# Check if code compiles/validates\nif [ -f \"go.mod\" ]; then\n  echo \"Running Go validation...\"\n  go build ./... && echo \"✓ Go build successful\" || echo \"✗ Go build failed\"\nelif [ -f \"package.json\" ]; then\n  echo \"Running Node.js validation...\"\n  npm run build 2>/dev/null && echo \"✓ Build successful\" || echo \"Build command not found or failed\"\n  npm test 2>/dev/null && echo \"✓ Tests passed\" || echo \"Test command not found or failed\"\nelif [ -f \"requirements.txt\" ] || [ -f \"setup.py\" ]; then\n  echo \"Python project detected\"\n  python -m py_compile *.py 2>/dev/null && echo \"✓ Python syntax valid\" || echo \"Python syntax check failed\"\nelse\n  echo \"✓ No specific validation available, changes applied\"\nfi",
+              "timeout": 60
+            }
+          },
+          "depends_on": ["perform_code_editing"],
+          "timeout": "2m"
+        },
+        {
+          "name": "provide_summary",
+          "type": "llm_display",
+          "config": {
+            "prompt": "Provide a comprehensive summary of the code editing session:\n\nUser Requirements: {collect_user_requirements.response}\nFiles Modified: {select_relevant_files}\nEditing Results: {perform_code_editing}\nValidation Results: {validate_changes.output}\n\nSummarize:\n1. What changes were requested\n2. Which files were selected and why\n3. What specific changes were made to each file\n4. Whether validation passed\n5. Next steps or recommendations for the user\n\nFormat your response as a clear, structured summary."
+          },
+          "depends_on": ["validate_changes"],
+          "timeout": "2m"
+        }
+      ]
+    }
+  ],
+  "tools": {
+    "read_file": {
+      "enabled": true,
+      "timeout": "30s",
+      "description": "Read complete contents of a file - REQUIRED before any edits"
+    },
+    "write_file": {
+      "enabled": true,
+      "timeout": "30s",
+      "description": "Write modified content to a file"
+    },
+    "list_files": {
+      "enabled": true,
+      "timeout": "30s",
+      "description": "List files in a directory to explore structure"
+    },
+    "shell_command": {
+      "enabled": true,
+      "timeout": "60s",
+      "description": "Execute shell commands for validation and testing"
+    },
+    "ask_user": {
+      "enabled": true,
+      "timeout": "300s",
+      "description": "Interactive user input and confirmation"
+    },
+    "embedding_ingest": {
+      "enabled": true,
+      "timeout": "600s",
+      "description": "Build embeddings for workspace files"
+    },
+    "embedding_search": {
+      "enabled": true,
+      "timeout": "60s",
+      "description": "Search files using semantic similarity"
+    },
+    "json_parse": {
+      "enabled": true,
+      "timeout": "10s",
+      "description": "Parse JSON responses"
+    }
+  },
+  "output": {
+    "format": "structured",
+    "fields": {
+      "user_requirements": "string",
+      "selected_files": "array",
+      "changes_summary": "string",
+      "validation_results": "string",
+      "workflow_status": "string"
+    },
+    "destination": "stdout"
+  },
+  "budget": {
+    "max_tokens": 200000,
+    "max_cost": 5.00,
+    "warn_at_percentage": 80
+  },
+  "security": {
+    "allowed_paths": ["./", "../"],
+    "allowed_commands": ["go", "npm", "python", "node", "bash"],
+    "max_file_size": "1MB"
+  }
+}

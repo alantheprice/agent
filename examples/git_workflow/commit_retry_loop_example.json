@@ -1,0 +1,81 @@
+{
+  "name": "commit_message_retry_loop",
+  "type": "loop",
+  "config": {
+    "max_iterations": 5,
+    "output_var": "final_commit_message",
+    "break_on": [
+      {
+        "field": "user_decision",
+        "operator": "equals",
+        "value": "y"
+      },
+      {
+        "field": "user_decision", 
+        "operator": "equals",
+        "value": "n"
+      }
+    ],
+    "steps": [
+      {
+        "name": "generate_commit_message",
+        "type": "llm",
+        "config": {
+          "prompt": "Generate a high-quality conventional commit message based on the code changes below:\n\n**Requirements:**\n1. **Follows conventional commit format**: `type(scope): description`\n2. **Uses appropriate type**: feat, fix, docs, style, refactor, test, chore, etc.\n3. **Has clear, concise subject** (≤50 characters)\n4. **Includes detailed body** explaining the 'why' not just the 'what'\n5. **References any breaking changes**\n\n**Code Changes:**\n```diff\n{get_staged_changes.output}\n```\n\n**Previous attempt feedback (if any):** {prev_user_feedback}\n\n**Generate the commit message in this format:**\n```\ntype(scope): short description\n\nDetailed explanation of changes:\n- Key changes made\n- Why these changes were necessary\n- Impact on the codebase\n```"
+        }
+      },
+      {
+        "name": "ask_user_decision",
+        "type": "tool",
+        "config": {
+          "tool": "ask_user",
+          "params": {
+            "question": "## Proposed Commit Message (Attempt {loop_iterations_completed})\n\n{generate_commit_message}\n\n**Options:** Accept (y), Revise (r), or Cancel (n):",
+            "default_response": "y"
+          }
+        }
+      },
+      {
+        "name": "user_decision",
+        "type": "tool", 
+        "config": {
+          "tool": "extract_response",
+          "params": {
+            "source": "{ask_user_decision.response}",
+            "field": "response"
+          }
+        }
+      },
+      {
+        "name": "get_revision_feedback",
+        "type": "tool",
+        "config": {
+          "tool": "ask_user",
+          "params": {
+            "question": "Please explain what should be different about the commit message:",
+            "default_response": "No feedback provided"
+          }
+        },
+        "conditions": [
+          {
+            "field": "user_decision",
+            "operator": "equals",
+            "value": "r"
+          }
+        ]
+      },
+      {
+        "name": "final_commit_message",
+        "type": "tool",
+        "config": {
+          "tool": "set_variable",
+          "params": {
+            "value": "{generate_commit_message}"
+          }
+        }
+      }
+    ]
+  },
+  "depends_on": ["thorough_code_review"],
+  "timeout": "15m"
+}

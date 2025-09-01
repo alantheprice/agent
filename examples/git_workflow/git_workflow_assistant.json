@@ -76,8 +76,8 @@
           "config": {
             "tool": "shell_command",
             "params": {
-              "command": "git diff --staged",
-              "timeout": 30
+              "command": "git diff --staged | head -500",
+              "timeout": 60
             }
           },
           "depends_on": ["welcome_and_validation"],
@@ -116,7 +116,7 @@
           "name": "thorough_code_review",
           "type": "llm_with_tools",
           "config": {
-            "prompt": "I am performing a code review and have access to tools to explore the codebase. I should verify my concerns by actually checking files before flagging issues.\n\n**Code Changes to Review:**\n```diff\n{get_staged_changes.output}\n```\n\n**My Approach:**\n1. **First, I'll analyze the diff** to identify potential concerns\n2. **Then, I'll use tools to verify** if issues actually exist or are handled elsewhere\n3. **Finally, I'll report only validated concerns** with evidence from the codebase\n\n**Available Actions:**\nWhen I identify potential issues, I can:\n- Read specific files to verify implementations\n- List directories to understand project structure  \n- Check for existing error handling, tests, or related code\n\n**What I'm Looking For:**\n- Code quality issues (naming, organization, error handling)\n- LLM generation problems (over-complexity, generic names, incomplete implementations)\n- Security and performance concerns\n- Missing tests or documentation\n- Breaking changes without proper migration\n\n**My Process:**\nI will examine the diff, then say things like:\n- \"Let me check if error handling exists in the related files...\"\n- \"I'll look at the existing test structure...\"\n- \"Let me verify if this functionality is implemented elsewhere...\"\n\nThis will trigger me to actually read files and verify my concerns before reporting issues.\n\nLet me start by analyzing the diff and then exploring the codebase as needed to provide an accurate review.",
+            "prompt": "I am performing a code review and have access to tools to explore the codebase. I should verify my concerns by actually checking files before flagging issues.\n\n**Code Changes to Review:**\n{get_staged_changes.output}\n\nNote: Large files (>50 changes) have been truncated to show only a summary with first/last 10 changes to avoid overwhelming the review. For truncated files, focus on the general nature of changes rather than line-by-line details.\n\n**My Approach:**\n1. **First, I'll analyze the diff** to identify potential concerns\n2. **Then, I'll use tools to verify** if issues actually exist or are handled elsewhere\n3. **Finally, I'll report only validated concerns** with evidence from the codebase\n\n**Available Actions:**\nWhen I identify potential issues, I can:\n- Read specific files to verify implementations\n- List directories to understand project structure  \n- Check for existing error handling, tests, or related code\n\n**What I'm Looking For:**\n- Code quality issues (naming, organization, error handling)\n- LLM generation problems (over-complexity, generic names, incomplete implementations)\n- Security and performance concerns\n- Missing tests or documentation\n- Breaking changes without proper migration\n\n**My Process:**\nI will examine the diff, then say things like:\n- \"Let me check if error handling exists in the related files...\"\n- \"I'll look at the existing test structure...\"\n- \"Let me verify if this functionality is implemented elsewhere...\"\n\nThis will trigger me to actually read files and verify my concerns before reporting issues.\n\nLet me start by analyzing the diff and then exploring the codebase as needed to provide an accurate review.",
             "tool_config": {
               "max_tool_calls": 5,
               "max_file_size": 8192,
@@ -148,7 +148,7 @@
             "tool": "write_file",
             "params": {
               "path": "code-review-feedback.md",
-              "content": "# Code Review Feedback\n\nGenerated on: {timestamp()}\n\n## Code Review Results\n{thorough_code_review}\n\n## Change Statistics\n- Files modified: {len(modified_files)} files\n- Lines added: {added_lines_count}\n- Lines deleted: {deleted_lines_count}\n- Net change: {subtract(added_lines_count, deleted_lines_count)} lines\n\n## Git Diff\n```diff\n{get_staged_changes.output}\n```\n\n---\n*This feedback was generated automatically by the Git Workflow Assistant*"
+               "content": "# Code Review Feedback\n\n## Code Review Results\n{thorough_code_review}\n\n## Change Statistics\n- Lines added: {added_lines_count}\n- Lines deleted: {deleted_lines_count}\n\n## Git Diff\n```diff\n{get_staged_changes.output}\n```\n\n---\n*This feedback was generated automatically by the Git Workflow Assistant*"
             }
           },
           "depends_on": ["review_user_decision"],
@@ -165,7 +165,7 @@
           "name": "generate_commit_message",
           "type": "llm",
           "config": {
-            "prompt": "Generate a high-quality conventional commit message based on the code changes below:\n\n**Requirements:**\n1. **Follows conventional commit format**: `type(scope): description`\n2. **Uses appropriate type**: feat, fix, docs, style, refactor, test, chore, etc.\n3. **Has clear, concise subject** (≤50 characters)\n4. **Includes detailed body** explaining the 'why' not just the 'what'\n5. **References any breaking changes**\n\n**Change Statistics:**\n- Files modified: {len(modified_files)} files\n- Lines added: {added_lines_count}\n- Lines deleted: {deleted_lines_count}\n- Net change: {subtract(added_lines_count, deleted_lines_count)} lines\n- Has new files: {contains(get_staged_changes.output, 'new file')}\n- Has breaking changes: {contains(get_staged_changes.output, 'BREAKING CHANGE')}\n\n**Code Changes:**\n```diff\n{get_staged_changes.output}\n```\n\n**Instructions:**\n- Focus on WHAT was changed and WHY it was necessary\n- Be specific about the functionality or improvements added\n- Use imperative mood (\"add\" not \"added\" or \"adds\")\n- Keep the subject line under 50 characters\n- Provide context in the body about the motivation and impact\n\n**Generate the commit message in this format:**\n```\ntype(scope): short description\n\nDetailed explanation of changes:\n- Key changes made\n- Why these changes were necessary\n- Impact on the codebase\n\nStats: {len(modified_files)} files, +{added_lines_count}/-{deleted_lines_count} lines\n```"
+             "prompt": "Generate a high-quality conventional commit message based on the code changes below:\n\n**Requirements:**\n1. **Follows conventional commit format**: `type(scope): description`\n2. **Uses appropriate type**: feat, fix, docs, style, refactor, test, chore, etc.\n3. **Has clear, concise subject** (≤50 characters)\n4. **Includes detailed body** explaining the 'why' not just the 'what'\n5. **References any breaking changes**\n\n**Change Statistics:**\n- Lines added: {added_lines_count}\n- Lines deleted: {deleted_lines_count}\n\n**Code Changes:**\n{get_staged_changes.output}\n\n**Instructions:**\n- Focus on WHAT was changed and WHY it was necessary\n- Be specific about the functionality or improvements added\n- Use imperative mood (\"add\" not \"added\" or \"adds\")\n- Keep the subject line under 50 characters\n- Provide context in the body about the motivation and impact\n\n**Generate the commit message in this format:**\n```\ntype(scope): short description\n\nDetailed explanation of changes:\n- Key changes made\n- Why these changes were necessary\n- Impact on the codebase\n\nStats: +{added_lines_count}/-{deleted_lines_count} lines\n```"
           },
           "post_transforms": [
             {
@@ -251,7 +251,7 @@
           "config": {
             "tool": "git_commit",
             "params": {
-              "message": "Execute the git commit with the approved message. Use the git_commit tool to create the commit and provide confirmation of successful completion including the commit hash."
+              "message": "{generate_commit_message}"
             }
           },
           "depends_on": ["commit_message_user_decision"],
@@ -260,6 +260,25 @@
               "field": "commit_message_user_decision",
               "operator": "equals", 
               "value": "y"
+            }
+          ],
+          "timeout": "30s"
+        },
+        {
+          "name": "execute_commit_revised",
+          "type": "tool",
+          "config": {
+            "tool": "git_commit",
+            "params": {
+              "message": "{regenerate_commit_message}"
+            }
+          },
+          "depends_on": ["regenerate_commit_message"],
+          "conditions": [
+            {
+              "field": "commit_message_user_decision",
+              "operator": "equals", 
+              "value": "r"
             }
           ],
           "timeout": "30s"
