@@ -186,6 +186,13 @@ func (we *WorkflowEngine) executeStep(ctx context.Context, step Step, execCtx *E
 			output, err = we.executeConditionStep(ctx, step, execCtx, previousResults)
 		case "loop":
 			output, err = we.executeLoopStep(ctx, step, execCtx, previousResults)
+			// Add loop metadata
+			if err == nil && output != nil {
+				if loopResult, ok := output.(*LoopResult); ok {
+					result.Metadata["iterations"] = loopResult.Iterations
+					result.Metadata["break_reason"] = loopResult.BreakReason
+				}
+			}
 		case "parallel":
 			output, err = we.executeParallelStep(ctx, step, execCtx, previousResults)
 		default:
@@ -328,11 +335,72 @@ func (we *WorkflowEngine) executeLLMDisplayStep(ctx context.Context, step Step, 
 	return response.Content, nil
 }
 
-// executeLLMWithToolsStep executes an LLM step with tool access for interactive exploration
+// LLMWithToolsConfig represents configuration for LLM with tools step
+type LLMWithToolsConfig struct {
+	MaxToolCalls    int      `json:"max_tool_calls"`
+	AllowedTools    []string `json:"allowed_tools"`
+	AllowedPaths    []string `json:"allowed_paths"`
+	MaxFileSize     int      `json:"max_file_size"`
+	FailOnToolError bool     `json:"fail_on_tool_error"`
+}
+
+// ToolExecution represents a single tool execution
+type ToolExecution struct {
+	Tool    string                 `json:"tool"`
+	Params  map[string]interface{} `json:"params"`
+	Result  string                 `json:"result"`
+	Success bool                   `json:"success"`
+	Error   string                 `json:"error,omitempty"`
+}
+
+// LLMWithToolsResult represents the result of LLM with tools execution
+type LLMWithToolsResult struct {
+	FinalResponse  string          `json:"final_response"`
+	ToolExecutions []ToolExecution `json:"tool_executions"`
+	ToolCallsUsed  int             `json:"tool_calls_used"`
+	TotalTokens    int             `json:"total_tokens"`
+	TotalCost      float64         `json:"total_cost"`
+}
+
+// executeLLMWithToolsStep executes an LLM step with tool access and proper controls
 func (we *WorkflowEngine) executeLLMWithToolsStep(ctx context.Context, step Step, execCtx *ExecutionContext, previousResults map[string]*StepResult) (interface{}, error) {
 	prompt, ok := step.Config["prompt"].(string)
 	if !ok {
 		return nil, fmt.Errorf("prompt not specified in step config")
+	}
+
+	// Parse configuration with defaults
+	config := LLMWithToolsConfig{
+		MaxToolCalls:    3,     // Default max tool calls to prevent loops
+		MaxFileSize:     10240, // 10KB default
+		FailOnToolError: true,  // Fail by default on tool errors
+	}
+
+	// Override with step config if provided
+	if configMap, ok := step.Config["tool_config"].(map[string]interface{}); ok {
+		if maxCalls, ok := configMap["max_tool_calls"].(float64); ok {
+			config.MaxToolCalls = int(maxCalls)
+		}
+		if maxSize, ok := configMap["max_file_size"].(float64); ok {
+			config.MaxFileSize = int(maxSize)
+		}
+		if failOnError, ok := configMap["fail_on_tool_error"].(bool); ok {
+			config.FailOnToolError = failOnError
+		}
+		if tools, ok := configMap["allowed_tools"].([]interface{}); ok {
+			for _, tool := range tools {
+				if toolStr, ok := tool.(string); ok {
+					config.AllowedTools = append(config.AllowedTools, toolStr)
+				}
+			}
+		}
+		if paths, ok := configMap["allowed_paths"].([]interface{}); ok {
+			for _, path := range paths {
+				if pathStr, ok := path.(string); ok {
+					config.AllowedPaths = append(config.AllowedPaths, pathStr)
+				}
+			}
+		}
 	}
 
 	// Template rendering for prompt with context variables
@@ -341,82 +409,348 @@ func (we *WorkflowEngine) executeLLMWithToolsStep(ctx context.Context, step Step
 		return nil, fmt.Errorf("failed to render prompt template: %w", err)
 	}
 
-	// Get initial LLM response
-	response, err := we.llmClient.Complete(ctx, renderedPrompt)
+	// Execute LLM with tools in a controlled manner
+	result, err := we.executeLLMWithToolsControlled(ctx, renderedPrompt, config, execCtx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("LLM with tools execution failed: %w", err)
 	}
 
-	// Update metrics
-	execCtx.Metrics.LLMTokensUsed += response.TokensUsed
-	execCtx.Metrics.LLMCost += response.Cost
+	// Log the result instead of using fmt.Println
+	we.logger.Info("LLM with tools step completed",
+		"step", step.Name,
+		"tool_calls_made", result.ToolCallsUsed,
+		"response_length", len(result.FinalResponse))
 
-	// Check if the LLM is requesting tool usage by looking for tool usage patterns
-	// This is a simple implementation - a full implementation would use function calling
-	fullResponse := response.Content
-	toolExecutions := []string{}
-
-	// Look for tool usage requests in the response (simple pattern matching)
-	// Example patterns: "Let me check the file..." or "I'll run grep..."
-	if we.shouldExecuteTools(response.Content) {
-		toolResult, err := we.executeToolsBasedOnLLMResponse(ctx, response.Content, execCtx, previousResults)
-		if err != nil {
-			we.logger.Warn("Tool execution failed", "error", err)
-			toolExecutions = append(toolExecutions, fmt.Sprintf("Tool execution failed: %v", err))
-		} else {
-			toolExecutions = append(toolExecutions, toolResult)
-		}
-
-		// Get follow-up response from LLM with tool results
-		followUpPrompt := fmt.Sprintf("%s\n\nTool execution results:\n%s\n\nBased on these results, please provide your final analysis:",
-			renderedPrompt, strings.Join(toolExecutions, "\n\n"))
-
-		followUpResponse, err := we.llmClient.Complete(ctx, followUpPrompt)
-		if err != nil {
-			we.logger.Warn("Follow-up LLM call failed", "error", err)
-		} else {
-			fullResponse = followUpResponse.Content
-			execCtx.Metrics.LLMTokensUsed += followUpResponse.TokensUsed
-			execCtx.Metrics.LLMCost += followUpResponse.Cost
-		}
-	}
-
-	// Display the LLM response to the user
+	// Display the response (keeping display for now but using structured logging)
 	fmt.Println("=== LLM ANALYSIS WITH TOOLS ===")
 	fmt.Println()
-	fmt.Print(fullResponse)
+	fmt.Print(result.FinalResponse)
 	fmt.Println()
-	if len(toolExecutions) > 0 {
+	if len(result.ToolExecutions) > 0 {
 		fmt.Println("=== TOOL EXECUTIONS ===")
-		fmt.Println(strings.Join(toolExecutions, "\n\n"))
-		fmt.Println()
+		for _, execution := range result.ToolExecutions {
+			fmt.Printf("Tool: %s\nResult: %s\n\n", execution.Tool, execution.Result)
+		}
 	}
 	fmt.Println("=== END ANALYSIS ===")
 	fmt.Println()
 
-	return fullResponse, nil
+	// Update metrics
+	execCtx.Metrics.LLMTokensUsed += result.TotalTokens
+	execCtx.Metrics.LLMCost += result.TotalCost
+
+	return result.FinalResponse, nil
 }
 
-// shouldExecuteTools determines if the LLM response indicates tool usage is needed
-func (we *WorkflowEngine) shouldExecuteTools(response string) bool {
-	// Simple heuristics to detect when LLM wants to use tools
-	patterns := []string{
+// executeLLMWithToolsControlled executes LLM with proper tool controls and security
+func (we *WorkflowEngine) executeLLMWithToolsControlled(ctx context.Context, prompt string, config LLMWithToolsConfig, execCtx *ExecutionContext) (*LLMWithToolsResult, error) {
+	result := &LLMWithToolsResult{
+		ToolExecutions: []ToolExecution{},
+		ToolCallsUsed:  0,
+	}
+
+	// Get initial LLM response
+	response, err := we.llmClient.Complete(ctx, prompt)
+	if err != nil {
+		return nil, fmt.Errorf("initial LLM call failed: %w", err)
+	}
+
+	result.TotalTokens += response.TokensUsed
+	result.TotalCost += response.Cost
+	result.FinalResponse = response.Content
+
+	// Check if the LLM is requesting tool usage using improved detection
+	if we.shouldExecuteToolsImproved(response.Content) && result.ToolCallsUsed < config.MaxToolCalls {
+		we.logger.Info("LLM response indicates tool usage needed", "response_sample", response.Content[:min(200, len(response.Content))])
+
+		// Execute tools based on LLM response with security controls
+		toolResults, err := we.executeToolsSecurely(ctx, response.Content, config, execCtx)
+		if err != nil {
+			if config.FailOnToolError {
+				return nil, fmt.Errorf("tool execution failed: %w", err)
+			}
+			we.logger.Warn("Tool execution failed but continuing", "error", err)
+			result.ToolExecutions = append(result.ToolExecutions, ToolExecution{
+				Tool:    "unknown",
+				Success: false,
+				Error:   err.Error(),
+			})
+		} else {
+			result.ToolExecutions = append(result.ToolExecutions, toolResults...)
+		}
+
+		result.ToolCallsUsed = len(result.ToolExecutions)
+
+		// If we have tool results, get follow-up response from LLM
+		if len(result.ToolExecutions) > 0 {
+			toolResultText := we.formatToolResults(result.ToolExecutions)
+			followUpPrompt := fmt.Sprintf("%s\n\nTool execution results:\n%s\n\nBased on these results, please provide your final analysis:",
+				prompt, toolResultText)
+
+			followUpResponse, err := we.llmClient.Complete(ctx, followUpPrompt)
+			if err != nil {
+				we.logger.Error("Follow-up LLM call failed", "error", err)
+				// Don't fail the entire step, just log and use original response
+			} else {
+				result.FinalResponse = followUpResponse.Content
+				result.TotalTokens += followUpResponse.TokensUsed
+				result.TotalCost += followUpResponse.Cost
+			}
+		}
+	}
+
+	return result, nil
+}
+
+// shouldExecuteToolsImproved determines if the LLM response indicates tool usage with better heuristics
+func (we *WorkflowEngine) shouldExecuteToolsImproved(response string) bool {
+	// More sophisticated pattern matching with context awareness
+	response = strings.ToLower(response)
+
+	// Look for explicit tool usage intentions
+	toolIndicators := []string{
 		"let me check",
 		"i'll examine",
 		"let me look at",
 		"i need to verify",
 		"let me search",
-		"i'll run",
+		"i should read",
 		"let me find",
+		"i'll investigate",
 	}
 
-	lowerResponse := strings.ToLower(response)
-	for _, pattern := range patterns {
-		if strings.Contains(lowerResponse, pattern) {
+	fileOperations := []string{
+		"read the file",
+		"examine the code",
+		"look at the implementation",
+		"check the source",
+		"verify the code",
+	}
+
+	// Check for tool indicators
+	for _, indicator := range toolIndicators {
+		if strings.Contains(response, indicator) {
+			return true
+		}
+	}
+
+	// Check for file operation intentions
+	for _, operation := range fileOperations {
+		if strings.Contains(response, operation) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// executeToolsSecurely executes tools with proper security controls
+func (we *WorkflowEngine) executeToolsSecurely(ctx context.Context, response string, config LLMWithToolsConfig, execCtx *ExecutionContext) ([]ToolExecution, error) {
+	var executions []ToolExecution
+	response = strings.ToLower(response)
+
+	// Security: Only execute if we have allowed tools configured, or use safe defaults
+	allowedTools := config.AllowedTools
+	if len(allowedTools) == 0 {
+		// Safe defaults
+		allowedTools = []string{"read_file", "list_files"}
+	}
+
+	// Check for file reading requests with security controls
+	if strings.Contains(response, "read") || strings.Contains(response, "file") || strings.Contains(response, "code") {
+		if we.isToolAllowed("read_file", allowedTools) {
+			files := we.determineFilesToRead(response, config.AllowedPaths)
+
+			for _, file := range files {
+				if !we.isPathAllowed(file, config.AllowedPaths) {
+					we.logger.Warn("File access denied by security policy", "file", file)
+					continue
+				}
+
+				execution := we.executeReadFileTool(ctx, file, config.MaxFileSize)
+				executions = append(executions, execution)
+
+				if len(executions) >= config.MaxToolCalls {
+					break
+				}
+			}
+		}
+	}
+
+	// Check for directory listing requests with security controls
+	if strings.Contains(response, "list") || strings.Contains(response, "directory") {
+		if we.isToolAllowed("list_files", allowedTools) {
+			directories := we.determineDirectoriesToList(response, config.AllowedPaths)
+
+			for _, dir := range directories {
+				if !we.isPathAllowed(dir, config.AllowedPaths) {
+					we.logger.Warn("Directory access denied by security policy", "directory", dir)
+					continue
+				}
+
+				execution := we.executeListFilesTool(ctx, dir)
+				executions = append(executions, execution)
+
+				if len(executions) >= config.MaxToolCalls {
+					break
+				}
+			}
+		}
+	}
+
+	return executions, nil
+}
+
+// Helper functions for security and tool execution
+func (we *WorkflowEngine) isToolAllowed(tool string, allowedTools []string) bool {
+	if len(allowedTools) == 0 {
+		return false // Default deny if no tools specified
+	}
+	for _, allowed := range allowedTools {
+		if allowed == tool {
 			return true
 		}
 	}
 	return false
+}
+
+func (we *WorkflowEngine) isPathAllowed(path string, allowedPaths []string) bool {
+	if len(allowedPaths) == 0 {
+		// Default safe paths if none specified
+		safePaths := []string{"pkg/", "./pkg/", "cmd/", "./cmd/", "examples/", "./examples/"}
+		allowedPaths = safePaths
+	}
+
+	for _, allowed := range allowedPaths {
+		if strings.HasPrefix(path, allowed) {
+			return true
+		}
+	}
+	return false
+}
+
+func (we *WorkflowEngine) determineFilesToRead(response string, allowedPaths []string) []string {
+	// Safe defaults for key files to examine
+	defaultFiles := []string{
+		"pkg/generic/workflow_engine.go",
+		"pkg/generic/template_engine.go",
+		"pkg/generic/tool_registry.go",
+	}
+
+	// TODO: Implement more sophisticated file path extraction from LLM response
+	// For now, return safe defaults
+	var validFiles []string
+	for _, file := range defaultFiles {
+		if we.isPathAllowed(file, allowedPaths) {
+			validFiles = append(validFiles, file)
+		}
+	}
+
+	return validFiles
+}
+
+func (we *WorkflowEngine) determineDirectoriesToList(response string, allowedPaths []string) []string {
+	// Safe defaults for directories to list
+	defaultDirs := []string{"pkg/generic", "cmd"}
+
+	var validDirs []string
+	for _, dir := range defaultDirs {
+		if we.isPathAllowed(dir, allowedPaths) {
+			validDirs = append(validDirs, dir)
+		}
+	}
+
+	return validDirs
+}
+
+func (we *WorkflowEngine) executeReadFileTool(ctx context.Context, filePath string, maxSize int) ToolExecution {
+	tool, exists := we.toolRegistry.GetTool("read_file")
+	if !exists {
+		return ToolExecution{
+			Tool:    "read_file",
+			Success: false,
+			Error:   "read_file tool not available",
+		}
+	}
+
+	params := map[string]interface{}{
+		"path":     filePath,
+		"max_size": maxSize,
+	}
+
+	result, err := tool.Execute(ctx, params)
+	if err != nil {
+		return ToolExecution{
+			Tool:    "read_file",
+			Params:  params,
+			Success: false,
+			Error:   err.Error(),
+		}
+	}
+
+	// Format the result for display
+	var resultText string
+	if resultMap, ok := result.(map[string]interface{}); ok {
+		if content, hasContent := resultMap["content"].(string); hasContent {
+			if len(content) > 2000 {
+				content = content[:2000] + "\n... (truncated)"
+			}
+			resultText = fmt.Sprintf("Content of %s:\n%s", filePath, content)
+		}
+	}
+
+	return ToolExecution{
+		Tool:    "read_file",
+		Params:  params,
+		Result:  resultText,
+		Success: true,
+	}
+}
+
+func (we *WorkflowEngine) executeListFilesTool(ctx context.Context, directory string) ToolExecution {
+	tool, exists := we.toolRegistry.GetTool("list_files")
+	if !exists {
+		return ToolExecution{
+			Tool:    "list_files",
+			Success: false,
+			Error:   "list_files tool not available",
+		}
+	}
+
+	params := map[string]interface{}{
+		"path": directory,
+	}
+
+	result, err := tool.Execute(ctx, params)
+	if err != nil {
+		return ToolExecution{
+			Tool:    "list_files",
+			Params:  params,
+			Success: false,
+			Error:   err.Error(),
+		}
+	}
+
+	resultText := fmt.Sprintf("Files in %s: %v", directory, result)
+
+	return ToolExecution{
+		Tool:    "list_files",
+		Params:  params,
+		Result:  resultText,
+		Success: true,
+	}
+}
+
+func (we *WorkflowEngine) formatToolResults(executions []ToolExecution) string {
+	var results []string
+	for _, execution := range executions {
+		if execution.Success {
+			results = append(results, fmt.Sprintf("Tool: %s\n%s", execution.Tool, execution.Result))
+		} else {
+			results = append(results, fmt.Sprintf("Tool: %s (FAILED)\nError: %s", execution.Tool, execution.Error))
+		}
+	}
+	return strings.Join(results, "\n\n")
 }
 
 // executeToolsBasedOnLLMResponse executes tools based on LLM response analysis
@@ -511,10 +845,258 @@ func (we *WorkflowEngine) executeConditionStep(ctx context.Context, step Step, e
 	return true, nil
 }
 
-// executeLoopStep executes a loop step
+// LoopConfig represents configuration for loop steps
+type LoopConfig struct {
+	MaxIterations int                  `json:"max_iterations"`
+	BreakOn       []LoopBreakCondition `json:"break_on"`
+	Steps         []Step               `json:"steps"`
+	OutputVar     string               `json:"output_var"`
+}
+
+// LoopBreakCondition defines when to exit a loop
+type LoopBreakCondition struct {
+	Field    string `json:"field"`
+	Operator string `json:"operator"`
+	Value    string `json:"value"`
+}
+
+// LoopResult represents the result of loop execution
+type LoopResult struct {
+	Iterations  int                    `json:"iterations"`
+	FinalResult interface{}            `json:"final_result"`
+	BreakReason string                 `json:"break_reason"`
+	StepResults map[string]interface{} `json:"step_results"`
+}
+
+// executeLoopStep executes a loop step with break conditions
 func (we *WorkflowEngine) executeLoopStep(ctx context.Context, step Step, execCtx *ExecutionContext, previousResults map[string]*StepResult) (interface{}, error) {
-	// TODO: Implement loop execution
-	return "loop completed", nil
+	// Parse loop configuration
+	config, err := we.parseLoopConfig(step.Config)
+	if err != nil {
+		return nil, fmt.Errorf("invalid loop configuration: %w", err)
+	}
+
+	we.logger.Info("Starting loop execution",
+		"step", step.Name,
+		"max_iterations", config.MaxIterations,
+		"break_conditions", len(config.BreakOn))
+
+	result := &LoopResult{
+		Iterations:  0,
+		StepResults: make(map[string]interface{}),
+		BreakReason: "max_iterations_reached",
+	}
+
+	// Execute loop iterations
+	for iteration := 0; iteration < config.MaxIterations; iteration++ {
+		result.Iterations = iteration + 1
+		we.logger.Debug("Loop iteration starting", "iteration", result.Iterations)
+
+		// Create iteration context with current loop variables
+		iterationCtx := we.createIterationContext(execCtx, result, iteration)
+
+		// Execute loop steps in sequence
+		iterationResults := make(map[string]*StepResult)
+		for _, loopStep := range config.Steps {
+			// Execute step with iteration context
+			stepResult, err := we.executeStep(ctx, loopStep, iterationCtx, previousResults)
+			if err != nil {
+				if !loopStep.ContinueOnError {
+					return nil, fmt.Errorf("loop step %s failed on iteration %d: %w", loopStep.Name, result.Iterations, err)
+				}
+				we.logger.Warn("Loop step failed but continuing", "step", loopStep.Name, "iteration", result.Iterations, "error", err)
+			}
+
+			iterationResults[loopStep.Name] = stepResult
+
+			// Store result for break condition evaluation
+			if stepResult.Success {
+				result.StepResults[loopStep.Name] = stepResult.Output
+			}
+		}
+
+		// Check break conditions after each iteration
+		shouldBreak, breakReason, err := we.evaluateLoopBreakConditions(config.BreakOn, iterationResults, iterationCtx)
+		if err != nil {
+			we.logger.Warn("Failed to evaluate break conditions", "error", err)
+		} else if shouldBreak {
+			result.BreakReason = breakReason
+			we.logger.Info("Loop breaking early", "reason", breakReason, "iteration", result.Iterations)
+			break
+		}
+
+		// Update execution context with latest results
+		for name, stepResult := range iterationResults {
+			previousResults[fmt.Sprintf("%s_iter_%d", name, iteration)] = stepResult
+		}
+	}
+
+	// Set final result - use the specified output variable or latest step result
+	if config.OutputVar != "" && result.StepResults[config.OutputVar] != nil {
+		result.FinalResult = result.StepResults[config.OutputVar]
+	} else {
+		result.FinalResult = result.StepResults
+	}
+
+	we.logger.Info("Loop execution completed",
+		"step", step.Name,
+		"iterations", result.Iterations,
+		"break_reason", result.BreakReason)
+
+	return result, nil
+}
+
+// parseLoopConfig parses the loop configuration from step config
+func (we *WorkflowEngine) parseLoopConfig(config map[string]interface{}) (*LoopConfig, error) {
+	loopConfig := &LoopConfig{
+		MaxIterations: 10, // Default max iterations
+		BreakOn:       []LoopBreakCondition{},
+		Steps:         []Step{},
+	}
+
+	// Parse max iterations - handle both int and float64 types
+	if maxIterFloat, ok := config["max_iterations"].(float64); ok {
+		loopConfig.MaxIterations = int(maxIterFloat)
+	} else if maxIterInt, ok := config["max_iterations"].(int); ok {
+		loopConfig.MaxIterations = maxIterInt
+	}
+
+	// Validate max iterations bounds
+	if loopConfig.MaxIterations <= 0 {
+		return nil, fmt.Errorf("max_iterations must be greater than 0")
+	}
+	if loopConfig.MaxIterations > 100 {
+		return nil, fmt.Errorf("max_iterations cannot exceed 100")
+	}
+
+	// Parse output variable
+	if outputVar, ok := config["output_var"].(string); ok {
+		loopConfig.OutputVar = outputVar
+	}
+
+	// Parse break conditions
+	if breakConditions, ok := config["break_on"].([]interface{}); ok {
+		for _, conditionInterface := range breakConditions {
+			if conditionMap, ok := conditionInterface.(map[string]interface{}); ok {
+				condition := LoopBreakCondition{}
+				if field, ok := conditionMap["field"].(string); ok {
+					condition.Field = field
+				}
+				if operator, ok := conditionMap["operator"].(string); ok {
+					condition.Operator = operator
+				}
+				if value, ok := conditionMap["value"].(string); ok {
+					condition.Value = value
+				}
+				loopConfig.BreakOn = append(loopConfig.BreakOn, condition)
+			}
+		}
+	}
+
+	// Parse loop steps
+	if stepsInterface, ok := config["steps"].([]interface{}); ok {
+		for _, stepInterface := range stepsInterface {
+			if stepMap, ok := stepInterface.(map[string]interface{}); ok {
+				step := Step{}
+				if name, ok := stepMap["name"].(string); ok {
+					step.Name = name
+				}
+				if stepType, ok := stepMap["type"].(string); ok {
+					step.Type = stepType
+				}
+				if stepConfig, ok := stepMap["config"].(map[string]interface{}); ok {
+					step.Config = stepConfig
+				}
+				// Parse other step fields as needed...
+				loopConfig.Steps = append(loopConfig.Steps, step)
+			}
+		}
+	}
+
+	if len(loopConfig.Steps) == 0 {
+		return nil, fmt.Errorf("loop must have at least one step")
+	}
+
+	return loopConfig, nil
+}
+
+// createIterationContext creates an execution context for a loop iteration
+func (we *WorkflowEngine) createIterationContext(baseCtx *ExecutionContext, loopResult *LoopResult, iteration int) *ExecutionContext {
+	// Create a new context that inherits from base context
+	iterationCtx := &ExecutionContext{
+		Data:        make(map[string]interface{}),
+		StepResults: baseCtx.StepResults,
+		Metrics:     baseCtx.Metrics,
+	}
+
+	// Copy base context data
+	for k, v := range baseCtx.Data {
+		iterationCtx.Data[k] = v
+	}
+
+	// Add loop-specific variables
+	iterationCtx.Data["loop_iteration"] = iteration
+	iterationCtx.Data["loop_iterations_completed"] = loopResult.Iterations
+
+	// Add previous loop results
+	for k, v := range loopResult.StepResults {
+		iterationCtx.Data[fmt.Sprintf("prev_%s", k)] = v
+	}
+
+	return iterationCtx
+}
+
+// evaluateLoopBreakConditions evaluates whether loop should break
+func (we *WorkflowEngine) evaluateLoopBreakConditions(conditions []LoopBreakCondition, stepResults map[string]*StepResult, execCtx *ExecutionContext) (bool, string, error) {
+	if len(conditions) == 0 {
+		return false, "", nil
+	}
+
+	for _, condition := range conditions {
+		// Get the field value from step results or context
+		var fieldValue interface{}
+
+		if result, exists := stepResults[condition.Field]; exists && result.Success {
+			fieldValue = result.Output
+
+			// Handle tool outputs that return maps (like ask_user)
+			if outputMap, ok := fieldValue.(map[string]interface{}); ok {
+				if response, hasResponse := outputMap["response"]; hasResponse {
+					fieldValue = response
+				}
+			}
+		} else if value, exists := execCtx.Data[condition.Field]; exists {
+			fieldValue = value
+		} else {
+			continue // Field not found, check next condition
+		}
+
+		// Convert to string for comparison
+		fieldStr := fmt.Sprintf("%v", fieldValue)
+
+		// Evaluate condition
+		matched := false
+		switch condition.Operator {
+		case "equals":
+			matched = fieldStr == condition.Value
+		case "not_equals":
+			matched = fieldStr != condition.Value
+		case "contains":
+			matched = strings.Contains(fieldStr, condition.Value)
+		case "not_contains":
+			matched = !strings.Contains(fieldStr, condition.Value)
+		default:
+			we.logger.Warn("Unknown loop break condition operator", "operator", condition.Operator)
+			continue
+		}
+
+		if matched {
+			reason := fmt.Sprintf("condition met: %s %s %s", condition.Field, condition.Operator, condition.Value)
+			return true, reason, nil
+		}
+	}
+
+	return false, "", nil
 }
 
 // executeParallelStep executes parallel steps

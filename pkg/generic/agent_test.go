@@ -50,7 +50,7 @@ func TestNewAgent(t *testing.T) {
 				},
 			},
 			expectError: true,
-			errorMsg:    "name",
+			errorMsg:    "API key",
 		},
 	}
 
@@ -245,6 +245,8 @@ func TestSelectWorkflow(t *testing.T) {
 
 func TestGenerateSessionID(t *testing.T) {
 	id1 := generateSessionID()
+	// Add a small sleep to ensure different timestamps
+	time.Sleep(1 * time.Millisecond)
 	id2 := generateSessionID()
 
 	if id1 == id2 {

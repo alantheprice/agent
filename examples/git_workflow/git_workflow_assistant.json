@@ -64,14 +64,12 @@
       "steps": [
         {
           "name": "welcome_and_validation",
-          "type": "llm_display",
+          "type": "display",
           "config": {
-            "prompt": "# Git Workflow Assistant\n\nStarting quick code review and git commit helper for your staged changes..."
+            "text": "# Git Workflow Assistant\n\nStarting quick code review and git commit helper for your staged changes..."
           },
-          "timeout": "30s"
+          "timeout": "2s"
         },
-
-
         {
           "name": "get_staged_changes",
           "type": "tool",
@@ -116,14 +114,20 @@
         },
         {
           "name": "thorough_code_review",
-          "type": "llm_display",
+          "type": "llm_with_tools",
           "config": {
-            "prompt": "Perform a focused code review to identify concerns and issues that need attention. Only report problems - do not mention positive aspects.\n\n**Look for these specific concerns:**\n\n**Code Quality Issues:**\n- Poor naming conventions or unclear organization\n- Functions violating single responsibility\n- Missing or inadequate error handling\n- Maintainability problems\n\n**LLM Code Generation Problems:**\n- Over-complicated or verbose implementations\n- Unnecessary abstractions or patterns\n- Generic variable/function names\n- Incomplete implementations or TODOs\n- Copy-paste patterns without customization\n- Missing input validation\n- Hardcoded values that should be configurable\n\n**Security & Performance Concerns:**\n- Potential security vulnerabilities\n- Performance bottlenecks or inefficiencies\n- Resource management issues (memory, connections, etc.)\n\n**Testing & Documentation Gaps:**\n- Missing tests for new functionality\n- Insufficient documentation or comments\n- Breaking changes without migration notes\n\n**Change Statistics:**\n- Files modified: {len(modified_files)} files\n- Lines added: {added_lines_count} additions\n- Lines deleted: {deleted_lines_count} deletions\n- Net change: {subtract(added_lines_count, deleted_lines_count)} lines\n\n**Code Changes to Review:**\n```diff\n{get_staged_changes.output}\n```\n\n**Instructions:**\n- Only report issues and concerns that need fixing\n- Provide specific line references where applicable\n- Highlight critical issues that should block the commit\n- If no significant issues are found, state \"No significant concerns identified\""
+            "prompt": "I am performing a code review and have access to tools to explore the codebase. I should verify my concerns by actually checking files before flagging issues.\n\n**Code Changes to Review:**\n```diff\n{get_staged_changes.output}\n```\n\n**My Approach:**\n1. **First, I'll analyze the diff** to identify potential concerns\n2. **Then, I'll use tools to verify** if issues actually exist or are handled elsewhere\n3. **Finally, I'll report only validated concerns** with evidence from the codebase\n\n**Available Actions:**\nWhen I identify potential issues, I can:\n- Read specific files to verify implementations\n- List directories to understand project structure  \n- Check for existing error handling, tests, or related code\n\n**What I'm Looking For:**\n- Code quality issues (naming, organization, error handling)\n- LLM generation problems (over-complexity, generic names, incomplete implementations)\n- Security and performance concerns\n- Missing tests or documentation\n- Breaking changes without proper migration\n\n**My Process:**\nI will examine the diff, then say things like:\n- \"Let me check if error handling exists in the related files...\"\n- \"I'll look at the existing test structure...\"\n- \"Let me verify if this functionality is implemented elsewhere...\"\n\nThis will trigger me to actually read files and verify my concerns before reporting issues.\n\nLet me start by analyzing the diff and then exploring the codebase as needed to provide an accurate review.",
+            "tool_config": {
+              "max_tool_calls": 5,
+              "max_file_size": 8192,
+              "fail_on_tool_error": false,
+              "allowed_tools": ["read_file", "list_files"],
+              "allowed_paths": ["pkg/", "cmd/", "examples/", "./pkg/", "./cmd/", "./examples/"]
+            }
           },
-           "depends_on": ["get_staged_changes", "infer_change_goals"],
-          "timeout": "5m"
+          "depends_on": ["get_staged_changes"],
+          "timeout": "10m"
         },
-
         {
           "name": "review_user_decision",
           "type": "tool",
@@ -264,6 +268,21 @@
     }
   ],
   "tools": {
+    "read_file": {
+      "enabled": true,
+      "timeout": "30s",
+      "description": "Read contents of a file to validate implementation details"
+    },
+    "list_files": {
+      "enabled": true,
+      "timeout": "30s",
+      "description": "List files in a directory to explore codebase structure"
+    },
+    "shell_command": {
+      "enabled": true,
+      "timeout": "60s",
+      "description": "Execute shell commands for codebase exploration (grep, find, etc.)"
+    },
     "git_diff": {
       "enabled": true,
       "timeout": "60s",
@@ -278,11 +297,6 @@
       "enabled": true,
       "timeout": "30s",
       "description": "Execute git commit with message"
-    },
-    "execute_script": {
-      "enabled": true,
-      "timeout": "120s",
-      "description": "Execute shell scripts with security validation"
     },
     "write_file": {
       "enabled": true,

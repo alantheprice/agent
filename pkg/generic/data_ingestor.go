@@ -16,8 +16,9 @@ import (
 
 // DataIngestor handles ingesting data from various sources
 type DataIngestor struct {
-	sources []DataSource
-	logger  *slog.Logger
+	sources          []DataSource
+	embeddingsConfig *EmbeddingConfig
+	logger           *slog.Logger
 }
 
 // IngestedData represents data from a source
@@ -29,10 +30,11 @@ type IngestedData struct {
 }
 
 // NewDataIngestor creates a new data ingestor
-func NewDataIngestor(sources []DataSource, logger *slog.Logger) (*DataIngestor, error) {
+func NewDataIngestor(sources []DataSource, embeddingsConfig *EmbeddingConfig, logger *slog.Logger) (*DataIngestor, error) {
 	return &DataIngestor{
-		sources: sources,
-		logger:  logger,
+		sources:          sources,
+		embeddingsConfig: embeddingsConfig,
+		logger:           logger,
 	}, nil
 }
 
@@ -329,10 +331,18 @@ func (di *DataIngestor) applyTransform(data interface{}, config map[string]inter
 
 // ingestEmbedding indexes content into vector storage
 func (di *DataIngestor) ingestEmbedding(ctx context.Context, source DataSource) (*IngestedData, error) {
-	// Extract embedding configuration from source config
+	// Extract embedding configuration from source config with centralized defaults
 	var embeddingConfig embedding.EmbeddingDataSourceConfig
 
-	// Map config to embedding config struct
+	// Use centralized embedding config as defaults
+	if di.embeddingsConfig != nil {
+		embeddingConfig.Provider = di.embeddingsConfig.Provider
+		embeddingConfig.Model = di.embeddingsConfig.Model
+		embeddingConfig.APIKey = di.embeddingsConfig.APIKey
+		embeddingConfig.ChunkSize = di.embeddingsConfig.ChunkSize
+	}
+
+	// Map config to embedding config struct (override defaults if specified)
 	if storageDir, ok := source.Config["storage_dir"].(string); ok {
 		embeddingConfig.StorageDir = storageDir
 	}
@@ -374,6 +384,8 @@ func (di *DataIngestor) ingestEmbedding(ctx context.Context, source DataSource) 
 	}
 	if chunkSize, ok := source.Config["chunk_size"].(float64); ok {
 		embeddingConfig.ChunkSize = int(chunkSize)
+	} else if embeddingConfig.ChunkSize == 0 {
+		embeddingConfig.ChunkSize = 1000 // fallback default
 	}
 	if refreshInterval, ok := source.Config["refresh_interval"].(string); ok {
 		embeddingConfig.RefreshInterval = refreshInterval

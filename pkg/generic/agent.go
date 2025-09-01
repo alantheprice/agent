@@ -62,7 +62,7 @@ func NewAgent(config *AgentConfig, logger *slog.Logger) (*Agent, error) {
 	var err error
 
 	// Data ingestion
-	agent.dataIngestor, err = NewDataIngestor(config.DataSources, logger)
+	agent.dataIngestor, err = NewDataIngestor(config.DataSources, &config.Embeddings, logger)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create data ingestor: %w", err)
 	}

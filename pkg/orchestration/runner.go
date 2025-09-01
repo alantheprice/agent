@@ -5,10 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alantheprice/agent-template/pkg/agent"
-	"github.com/alantheprice/agent-template/pkg/config"
+	"github.com/alantheprice/agent-template/pkg/generic"
 	"github.com/alantheprice/agent-template/pkg/orchestration/types"
-	"github.com/alantheprice/agent-template/pkg/utils"
 )
 
 // AgentRunner manages a single agent instance

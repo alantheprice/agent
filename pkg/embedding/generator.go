@@ -128,7 +128,7 @@ func (p *DeepInfraProvider) GetName() string {
 }
 
 func (p *DeepInfraProvider) GetDefaultModel() string {
-	return "sentence-transformers/all-MiniLM-L6-v2"
+	return "Qwen/Qwen3-Embedding-4B"
 }
 
 func (p *DeepInfraProvider) GenerateEmbedding(text string, model string) ([]float64, error) {

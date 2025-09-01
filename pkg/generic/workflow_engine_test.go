@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -530,6 +531,12 @@ func TestExecuteStep(t *testing.T) {
 			step: Step{
 				Name: "test-loop",
 				Type: "loop",
+				Config: map[string]interface{}{
+					"max_iterations": 1,
+					"steps": []interface{}{
+						map[string]interface{}{"name": "inner-step", "type": "condition"},
+					},
+				},
 			},
 			expectError: false,
 		},
@@ -609,6 +616,433 @@ func TestExecuteStep(t *testing.T) {
 				if result.ExecutionTime < 0 {
 					t.Error("Expected positive execution time")
 				}
+			}
+		})
+	}
+}
+
+func TestLoopExecution(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	toolRegistry, _ := NewToolRegistry(map[string]Tool{}, &Security{Enabled: false}, logger)
+	llmClient, _ := NewLLMClient(LLMConfig{Provider: "openai", Model: "gpt-4"}, logger)
+	validator, _ := NewValidator(Validation{Enabled: false}, logger)
+
+	engine, _ := NewWorkflowEngine([]Workflow{}, toolRegistry, llmClient, validator, logger)
+
+	tests := []struct {
+		name               string
+		step               Step
+		expectError        bool
+		expectedIterations int
+		setupResults       func() map[string]*StepResult
+	}{
+		{
+			name: "loop with max iterations reached",
+			step: Step{
+				Name: "test-loop",
+				Type: "loop",
+				Config: map[string]interface{}{
+					"max_iterations": 3,
+					"break_on": []interface{}{
+						map[string]interface{}{"field": "never_matches", "operator": "equals", "value": "never"},
+					},
+					"steps": []interface{}{
+						map[string]interface{}{"name": "inner-step", "type": "condition"},
+					},
+				},
+			},
+			expectError:        false,
+			expectedIterations: 3,
+			setupResults:       func() map[string]*StepResult { return make(map[string]*StepResult) },
+		},
+		{
+			name: "loop with break condition - runs full iterations (condition step always returns empty)",
+			step: Step{
+				Name: "test-loop",
+				Type: "loop",
+				Config: map[string]interface{}{
+					"max_iterations": 3,
+					"break_on": []interface{}{
+						map[string]interface{}{"field": "break_step", "operator": "equals", "value": "stop"},
+					},
+					"steps": []interface{}{
+						map[string]interface{}{"name": "break_step", "type": "condition"},
+					},
+				},
+			},
+			expectError:        false,
+			expectedIterations: 3, // condition step returns empty, so break condition never matches
+			setupResults:       func() map[string]*StepResult { return make(map[string]*StepResult) },
+		},
+		{
+			name: "loop with no break conditions",
+			step: Step{
+				Name: "test-loop",
+				Type: "loop",
+				Config: map[string]interface{}{
+					"max_iterations": 2,
+					"steps": []interface{}{
+						map[string]interface{}{"name": "inner-step", "type": "condition"},
+					},
+				},
+			},
+			expectError:        false,
+			expectedIterations: 2,
+			setupResults:       func() map[string]*StepResult { return make(map[string]*StepResult) },
+		},
+		{
+			name: "loop with invalid max iterations",
+			step: Step{
+				Name: "test-loop",
+				Type: "loop",
+				Config: map[string]interface{}{
+					"max_iterations": 0,
+					"steps": []interface{}{
+						map[string]interface{}{"name": "inner-step", "type": "condition"},
+					},
+				},
+			},
+			expectError:        true,
+			expectedIterations: 0,
+			setupResults:       func() map[string]*StepResult { return make(map[string]*StepResult) },
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			execCtx := &ExecutionContext{
+				Context:     context.Background(),
+				SessionID:   "test-session",
+				StartTime:   time.Now(),
+				Data:        make(map[string]interface{}),
+				Variables:   make(map[string]string),
+				StepResults: make(map[string]*StepResult),
+				Metrics:     &ExecutionMetrics{},
+			}
+
+			previousResults := tt.setupResults()
+
+			result, err := engine.executeStep(context.Background(), tt.step, execCtx, previousResults)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+
+			if result == nil {
+				t.Error("Expected result to be returned")
+				return
+			}
+
+			// Check if loop completed successfully
+			if !result.Success {
+				t.Errorf("Expected loop to succeed, got error: %v", result.Error)
+			}
+
+			// Verify iterations in metadata
+			if iterations, ok := result.Metadata["iterations"].(int); ok {
+				if iterations != tt.expectedIterations {
+					t.Errorf("Expected %d iterations, got %d", tt.expectedIterations, iterations)
+				}
+			} else {
+				t.Error("Expected iterations metadata to be set")
+			}
+		})
+	}
+}
+
+func TestLoopBreakConditions(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	toolRegistry, _ := NewToolRegistry(map[string]Tool{}, &Security{Enabled: false}, logger)
+	llmClient, _ := NewLLMClient(LLMConfig{Provider: "openai", Model: "gpt-4"}, logger)
+	validator, _ := NewValidator(Validation{Enabled: false}, logger)
+
+	engine, _ := NewWorkflowEngine([]Workflow{}, toolRegistry, llmClient, validator, logger)
+
+	tests := []struct {
+		name            string
+		breakConditions []StepCondition
+		stepResults     map[string]*StepResult
+		expected        bool
+		expectError     bool
+	}{
+		{
+			name: "equals condition - should break",
+			breakConditions: []StepCondition{
+				{Field: "test_step", Operator: "equals", Value: "break_value"},
+			},
+			stepResults: map[string]*StepResult{
+				"test_step": {
+					StepName: "test_step",
+					Success:  true,
+					Output:   "break_value",
+				},
+			},
+			expected: true,
+		},
+		{
+			name: "equals condition - should continue",
+			breakConditions: []StepCondition{
+				{Field: "test_step", Operator: "equals", Value: "break_value"},
+			},
+			stepResults: map[string]*StepResult{
+				"test_step": {
+					StepName: "test_step",
+					Success:  true,
+					Output:   "continue_value",
+				},
+			},
+			expected: false,
+		},
+		{
+			name: "contains condition - should break",
+			breakConditions: []StepCondition{
+				{Field: "test_step", Operator: "contains", Value: "break"},
+			},
+			stepResults: map[string]*StepResult{
+				"test_step": {
+					StepName: "test_step",
+					Success:  true,
+					Output:   "this contains break keyword",
+				},
+			},
+			expected: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			execCtx := &ExecutionContext{
+				Context:     context.Background(),
+				SessionID:   "test-session",
+				StartTime:   time.Now(),
+				Data:        make(map[string]interface{}),
+				Variables:   make(map[string]string),
+				StepResults: make(map[string]*StepResult),
+				Metrics:     &ExecutionMetrics{},
+			}
+
+			result, err := engine.evaluateStepConditions(tt.breakConditions, tt.stepResults, execCtx)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+
+			if result != tt.expected {
+				t.Errorf("Expected %v, got %v", tt.expected, result)
+			}
+		})
+	}
+}
+
+func TestLoopErrorHandling(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	toolRegistry, _ := NewToolRegistry(map[string]Tool{}, &Security{Enabled: false}, logger)
+	llmClient, _ := NewLLMClient(LLMConfig{Provider: "openai", Model: "gpt-4"}, logger)
+	validator, _ := NewValidator(Validation{Enabled: false}, logger)
+
+	engine, _ := NewWorkflowEngine([]Workflow{}, toolRegistry, llmClient, validator, logger)
+
+	tests := []struct {
+		name        string
+		step        Step
+		expectError bool
+		errorMsg    string
+	}{
+		{
+			name: "loop with nil config",
+			step: Step{
+				Name:   "test-loop",
+				Type:   "loop",
+				Config: nil,
+			},
+			expectError: true,
+			errorMsg:    "configuration",
+		},
+		{
+			name: "loop with empty config",
+			step: Step{
+				Name:   "test-loop",
+				Type:   "loop",
+				Config: map[string]interface{}{},
+			},
+			expectError: true,
+			errorMsg:    "loop must have at least one step",
+		},
+		{
+			name: "loop with zero max iterations",
+			step: Step{
+				Name: "test-loop",
+				Type: "loop",
+				Config: map[string]interface{}{
+					"max_iterations": 0,
+					"steps": []interface{}{
+						map[string]interface{}{"name": "inner-step", "type": "condition"},
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    "max_iterations must be greater than 0",
+		},
+		{
+			name: "loop with too many max iterations",
+			step: Step{
+				Name: "test-loop",
+				Type: "loop",
+				Config: map[string]interface{}{
+					"max_iterations": 101,
+					"steps": []interface{}{
+						map[string]interface{}{"name": "inner-step", "type": "condition"},
+					},
+				},
+			},
+			expectError: true,
+			errorMsg:    "max_iterations cannot exceed 100",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			execCtx := &ExecutionContext{
+				Context:     context.Background(),
+				SessionID:   "test-session",
+				StartTime:   time.Now(),
+				Data:        make(map[string]interface{}),
+				Variables:   make(map[string]string),
+				StepResults: make(map[string]*StepResult),
+				Metrics:     &ExecutionMetrics{},
+			}
+
+			previousResults := make(map[string]*StepResult)
+
+			result, err := engine.executeStep(context.Background(), tt.step, execCtx, previousResults)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error but got none")
+				} else if tt.errorMsg != "" && !strings.Contains(err.Error(), tt.errorMsg) {
+					t.Errorf("Expected error containing '%s', got '%s'", tt.errorMsg, err.Error())
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+			}
+
+			if result == nil {
+				t.Error("Expected result to be returned")
+			}
+		})
+	}
+}
+
+func TestDisplayStep(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+
+	toolRegistry, _ := NewToolRegistry(map[string]Tool{}, &Security{Enabled: false}, logger)
+	llmClient, _ := NewLLMClient(LLMConfig{Provider: "openai", Model: "gpt-4"}, logger)
+	validator, _ := NewValidator(Validation{Enabled: false}, logger)
+
+	engine, _ := NewWorkflowEngine([]Workflow{}, toolRegistry, llmClient, validator, logger)
+
+	tests := []struct {
+		name        string
+		step        Step
+		expectError bool
+	}{
+		{
+			name: "display step with text",
+			step: Step{
+				Name: "test-display",
+				Type: "display",
+				Config: map[string]interface{}{
+					"text": "Hello, World!",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "display step with prompt (backward compatibility)",
+			step: Step{
+				Name: "test-display-prompt",
+				Type: "display",
+				Config: map[string]interface{}{
+					"prompt": "Hello from prompt!",
+				},
+			},
+			expectError: false,
+		},
+		{
+			name: "display step with no text or prompt",
+			step: Step{
+				Name:   "test-display-empty",
+				Type:   "display",
+				Config: map[string]interface{}{},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			execCtx := &ExecutionContext{
+				Context:     context.Background(),
+				SessionID:   "test-session",
+				StartTime:   time.Now(),
+				Data:        make(map[string]interface{}),
+				Variables:   make(map[string]string),
+				StepResults: make(map[string]*StepResult),
+				Metrics:     &ExecutionMetrics{},
+			}
+
+			previousResults := make(map[string]*StepResult)
+
+			result, err := engine.executeStep(context.Background(), tt.step, execCtx, previousResults)
+
+			if tt.expectError {
+				if err == nil {
+					t.Error("Expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Errorf("Unexpected error: %v", err)
+				return
+			}
+
+			if result == nil {
+				t.Error("Expected result to be returned")
+				return
+			}
+
+			// Verify display step succeeded
+			if !result.Success {
+				t.Errorf("Expected display step to succeed, got error: %v", result.Error)
+			}
+
+			// Verify execution time was recorded
+			if result.ExecutionTime < 0 {
+				t.Error("Expected positive execution time")
 			}
 		})
 	}

@@ -12,6 +12,7 @@ import (
 type AgentConfig struct {
 	Agent       AgentInfo       `json:"agent" validate:"required"`
 	LLM         LLMConfig       `json:"llm" validate:"required"`
+	Embeddings  EmbeddingConfig `json:"embeddings,omitempty"`
 	DataSources []DataSource    `json:"data_sources,omitempty"`
 	Workflows   []Workflow      `json:"workflows,omitempty"`
 	Tools       map[string]Tool `json:"tools,omitempty"`
@@ -43,6 +44,16 @@ type LLMConfig struct {
 	SpecializedModels map[string]string      `json:"specialized_models,omitempty"`
 	ProviderConfig    map[string]interface{} `json:"provider_config,omitempty"`
 	APIKey            string                 `json:"api_key,omitempty"` // Can be set directly or via environment variable
+}
+
+// EmbeddingConfig contains embedding provider configuration
+type EmbeddingConfig struct {
+	Provider       string                 `json:"provider,omitempty"`
+	Model          string                 `json:"model,omitempty"`
+	APIKey         string                 `json:"api_key,omitempty"` // Can be set directly or via environment variable
+	ProviderConfig map[string]interface{} `json:"provider_config,omitempty"`
+	ChunkSize      int                    `json:"chunk_size,omitempty"`
+	BatchSize      int                    `json:"batch_size,omitempty"`
 }
 
 // DataSource defines a data ingestion source
@@ -252,6 +263,20 @@ func (c *AgentConfig) setDefaults() error {
 	}
 	if c.LLM.MaxTokens == 0 {
 		c.LLM.MaxTokens = 4096
+	}
+
+	// Embeddings defaults
+	if c.Embeddings.Provider == "" {
+		c.Embeddings.Provider = "deepinfra"
+	}
+	if c.Embeddings.Model == "" {
+		c.Embeddings.Model = "Qwen/Qwen3-Embedding-4B"
+	}
+	if c.Embeddings.ChunkSize == 0 {
+		c.Embeddings.ChunkSize = 1000
+	}
+	if c.Embeddings.BatchSize == 0 {
+		c.Embeddings.BatchSize = 10
 	}
 
 	// Environment defaults

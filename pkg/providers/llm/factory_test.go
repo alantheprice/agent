@@ -1,10 +1,88 @@
 package llm
 
 import (
+	"context"
+	"io"
 	"testing"
 
+	"github.com/alantheprice/agent-template/pkg/interfaces"
 	"github.com/alantheprice/agent-template/pkg/interfaces/types"
 )
+
+// MockProviderFactory is a mock implementation of ProviderFactory for testing
+type MockProviderFactory struct {
+	name string
+}
+
+func (m *MockProviderFactory) GetName() string {
+	return m.name
+}
+
+func (m *MockProviderFactory) Create(config *types.ProviderConfig) (interfaces.LLMProvider, error) {
+	return &MockProvider{name: m.name}, nil
+}
+
+func (m *MockProviderFactory) Validate(config *types.ProviderConfig) error {
+	return nil
+}
+
+// MockProvider is a mock implementation of LLMProvider for testing
+type MockProvider struct {
+	name string
+}
+
+func (m *MockProvider) GetName() string {
+	return m.name
+}
+
+func (m *MockProvider) GenerateResponse(ctx context.Context, messages []types.Message, options types.RequestOptions) (string, *types.ResponseMetadata, error) {
+	return "mock response", &types.ResponseMetadata{
+		Model:    options.Model,
+		Provider: m.name,
+		TokenUsage: types.TokenUsage{
+			PromptTokens:     10,
+			CompletionTokens: 10,
+			TotalTokens:      20,
+		},
+	}, nil
+}
+
+func (m *MockProvider) GenerateResponseStream(ctx context.Context, messages []types.Message, options types.RequestOptions, writer io.Writer) (*types.ResponseMetadata, error) {
+	writer.Write([]byte("mock stream response"))
+	return &types.ResponseMetadata{
+		Model:    options.Model,
+		Provider: m.name,
+		TokenUsage: types.TokenUsage{
+			PromptTokens:     10,
+			CompletionTokens: 10,
+			TotalTokens:      20,
+		},
+	}, nil
+}
+
+func (m *MockProvider) IsAvailable(ctx context.Context) error {
+	return nil
+}
+
+func (m *MockProvider) EstimateTokens(messages []types.Message) (int, error) {
+	return len(messages) * 10, nil
+}
+
+func (m *MockProvider) CalculateCost(usage types.TokenUsage) float64 {
+	return float64(usage.TotalTokens) * 0.001
+}
+
+func (m *MockProvider) GetModels(ctx context.Context) ([]types.ModelInfo, error) {
+	return []types.ModelInfo{
+		{
+			Name:           "mock-model",
+			Provider:       m.name,
+			MaxTokens:      1000,
+			SupportsTools:  false,
+			SupportsImages: false,
+		},
+	}, nil
+}
 
 func TestNewFactory(t *testing.T) {
 	registry := NewRegistry()
@@ -21,6 +99,11 @@ func TestNewFactory(t *testing.T) {
 
 func TestCreateProvider(t *testing.T) {
 	registry := NewRegistry()
+
+	// Register a mock provider for testing
+	mockFactory := &MockProviderFactory{name: "openai"}
+	registry.Register(mockFactory)
+
 	factory := NewFactory(registry)
 
 	tests := []struct {
@@ -62,7 +145,7 @@ func TestCreateProvider(t *testing.T) {
 				Enabled: true,
 			},
 			expectError: true,
-			errorMsg:    "unknown provider",
+			errorMsg:    "is not registered",
 		},
 	}
 
@@ -143,6 +226,15 @@ func TestCreateProviderByName(t *testing.T) {
 
 func TestGetAvailableProviders(t *testing.T) {
 	registry := NewRegistry()
+
+	// Register some mock providers
+	mockFactory1 := &MockProviderFactory{name: "openai"}
+	mockFactory2 := &MockProviderFactory{name: "gemini"}
+	mockFactory3 := &MockProviderFactory{name: "ollama"}
+	registry.Register(mockFactory1)
+	registry.Register(mockFactory2)
+	registry.Register(mockFactory3)
+
 	factory := NewFactory(registry)
 
 	providers := factory.GetAvailableProviders()
@@ -222,6 +314,13 @@ func TestValidateProviderConfig(t *testing.T) {
 
 func TestAutoDetectProvider(t *testing.T) {
 	registry := NewRegistry()
+
+	// Register mock providers
+	mockFactory1 := &MockProviderFactory{name: "openai"}
+	mockFactory2 := &MockProviderFactory{name: "gemini"}
+	registry.Register(mockFactory1)
+	registry.Register(mockFactory2)
+
 	factory := NewFactory(registry)
 
 	tests := []struct {
@@ -307,6 +406,13 @@ func TestAutoDetectProvider(t *testing.T) {
 
 func TestCreateMultipleProviders(t *testing.T) {
 	registry := NewRegistry()
+
+	// Register mock providers
+	mockFactory1 := &MockProviderFactory{name: "openai"}
+	mockFactory2 := &MockProviderFactory{name: "gemini"}
+	registry.Register(mockFactory1)
+	registry.Register(mockFactory2)
+
 	factory := NewFactory(registry)
 
 	tests := []struct {

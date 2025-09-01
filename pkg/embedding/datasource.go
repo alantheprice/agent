@@ -46,6 +46,11 @@ func NewEmbeddingDataSource(config EmbeddingDataSourceConfig) (*EmbeddingDataSou
 	// Create embedding generator
 	generator := NewEmbeddingGenerator()
 
+	// Get API key from environment if not provided
+	if config.APIKey == "" {
+		config.APIKey = getEmbeddingAPIKeyFromEnv(config.Provider)
+	}
+
 	// Register providers based on available API keys
 	if config.APIKey != "" {
 		switch config.Provider {
@@ -56,6 +61,8 @@ func NewEmbeddingDataSource(config EmbeddingDataSourceConfig) (*EmbeddingDataSou
 		default:
 			return nil, fmt.Errorf("unsupported embedding provider: %s", config.Provider)
 		}
+	} else {
+		return nil, fmt.Errorf("no API key found for provider %s. Please set the appropriate environment variable", config.Provider)
 	}
 
 	// Create vector database
@@ -353,4 +360,23 @@ func (eds *EmbeddingDataSource) RefreshEmbeddings(ctx context.Context) error {
 	// Perform refresh
 	_, err = eds.IngestData(ctx)
 	return err
+}
+
+// getEmbeddingAPIKeyFromEnv gets API key from environment variables based on provider
+func getEmbeddingAPIKeyFromEnv(provider string) string {
+	// Common environment variable patterns for different embedding providers
+	envVars := map[string][]string{
+		"openai":    {"OPENAI_API_KEY"},
+		"deepinfra": {"DEEPINFRA_API_KEY", "DEEPINFRA_TOKEN"},
+	}
+
+	if vars, exists := envVars[provider]; exists {
+		for _, envVar := range vars {
+			if value := os.Getenv(envVar); value != "" {
+				return value
+			}
+		}
+	}
+
+	return ""
 }
