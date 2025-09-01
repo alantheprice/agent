@@ -88,19 +88,23 @@ func (ow *OutputWriter) formatData(data interface{}, output Output) ([]byte, err
 	case "json":
 		return json.MarshalIndent(data, "", "  ")
 	case "yaml":
-		// TODO: Implement YAML formatting
-		jsonData, err := json.MarshalIndent(data, "", "  ")
+		// Simple YAML formatting by converting structured data
+		yamlStr, err := ow.convertToYAML(data, 0)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("failed to format as YAML: %w", err)
 		}
-		return jsonData, nil
+		return []byte(yamlStr), nil
 	case "text":
 		return []byte(fmt.Sprintf("%v", data)), nil
 	case "markdown":
 		return ow.formatAsMarkdown(data)
 	case "csv":
-		// TODO: Implement CSV formatting
-		return []byte(fmt.Sprintf("%v", data)), nil
+		// Convert data to CSV format
+		csvData, err := ow.convertToCSV(data)
+		if err != nil {
+			return nil, fmt.Errorf("failed to format as CSV: %w", err)
+		}
+		return []byte(csvData), nil
 	default:
 		return nil, fmt.Errorf("unsupported format: %s", format)
 	}
@@ -186,4 +190,136 @@ func (ow *OutputWriter) writeToWebhook(data []byte, output Output, execCtx *Exec
 	// TODO: Implement webhook writing
 	ow.logger.Info("Would write to webhook", "output", output.Name, "size", len(data))
 	return nil
+}
+
+// convertToYAML converts data to YAML format (simple implementation)
+func (ow *OutputWriter) convertToYAML(data interface{}, indent int) (string, error) {
+	indentStr := strings.Repeat("  ", indent)
+	
+	switch v := data.(type) {
+	case nil:
+		return "null", nil
+	case bool:
+		return fmt.Sprintf("%v", v), nil
+	case int, int64, float64:
+		return fmt.Sprintf("%v", v), nil
+	case string:
+		// Escape special characters and quote if necessary
+		if strings.Contains(v, "\n") || strings.Contains(v, ":") || strings.Contains(v, "#") {
+			escaped := strings.ReplaceAll(v, "\"", "\\\"")
+			escaped = strings.ReplaceAll(escaped, "\n", "\\n")
+			return fmt.Sprintf("\"%s\"", escaped), nil
+		}
+		return v, nil
+	case []interface{}:
+		var result strings.Builder
+		for i, item := range v {
+			if i > 0 {
+				result.WriteString("\n")
+			}
+			result.WriteString(indentStr + "- ")
+			itemYAML, err := ow.convertToYAML(item, indent+1)
+			if err != nil {
+				return "", err
+			}
+			result.WriteString(itemYAML)
+		}
+		return result.String(), nil
+	case map[string]interface{}:
+		var result strings.Builder
+		i := 0
+		for key, value := range v {
+			if i > 0 {
+				result.WriteString("\n")
+			}
+			result.WriteString(indentStr + key + ": ")
+			valueYAML, err := ow.convertToYAML(value, indent+1)
+			if err != nil {
+				return "", err
+			}
+			// Handle multiline values
+			if strings.Contains(valueYAML, "\n") {
+				result.WriteString("\n" + strings.ReplaceAll(valueYAML, "\n", "\n"+indentStr+"  "))
+			} else {
+				result.WriteString(valueYAML)
+			}
+			i++
+		}
+		return result.String(), nil
+	default:
+		return fmt.Sprintf("%v", v), nil
+	}
+}
+
+// convertToCSV converts data to CSV format
+func (ow *OutputWriter) convertToCSV(data interface{}) (string, error) {
+	switch v := data.(type) {
+	case []interface{}:
+		if len(v) == 0 {
+			return "", nil
+		}
+		
+		// Check if it's an array of maps (typical case)
+		if firstItem, ok := v[0].(map[string]interface{}); ok {
+			var result strings.Builder
+			
+			// Write header
+			var headers []string
+			for key := range firstItem {
+				headers = append(headers, key)
+			}
+			result.WriteString(strings.Join(headers, ",") + "\n")
+			
+			// Write rows
+			for _, item := range v {
+				if itemMap, ok := item.(map[string]interface{}); ok {
+					var values []string
+					for _, header := range headers {
+						value := itemMap[header]
+						valueStr := fmt.Sprintf("%v", value)
+						// Escape commas and quotes
+						if strings.Contains(valueStr, ",") || strings.Contains(valueStr, "\"") || strings.Contains(valueStr, "\n") {
+							valueStr = "\"" + strings.ReplaceAll(valueStr, "\"", "\"\"") + "\""
+						}
+						values = append(values, valueStr)
+					}
+					result.WriteString(strings.Join(values, ",") + "\n")
+				}
+			}
+			return result.String(), nil
+		}
+		
+		// Handle array of primitive values
+		var values []string
+		for _, item := range v {
+			valueStr := fmt.Sprintf("%v", item)
+			if strings.Contains(valueStr, ",") || strings.Contains(valueStr, "\"") || strings.Contains(valueStr, "\n") {
+				valueStr = "\"" + strings.ReplaceAll(valueStr, "\"", "\"\"") + "\""
+			}
+			values = append(values, valueStr)
+		}
+		return strings.Join(values, ","), nil
+		
+	case map[string]interface{}:
+		// Convert single map to CSV with key-value pairs
+		var result strings.Builder
+		result.WriteString("Key,Value\n")
+		
+		for key, value := range v {
+			valueStr := fmt.Sprintf("%v", value)
+			if strings.Contains(valueStr, ",") || strings.Contains(valueStr, "\"") || strings.Contains(valueStr, "\n") {
+				valueStr = "\"" + strings.ReplaceAll(valueStr, "\"", "\"\"") + "\""
+			}
+			result.WriteString(fmt.Sprintf("%s,%s\n", key, valueStr))
+		}
+		return result.String(), nil
+		
+	default:
+		// For primitive values, return as single cell
+		valueStr := fmt.Sprintf("%v", data)
+		if strings.Contains(valueStr, ",") || strings.Contains(valueStr, "\"") || strings.Contains(valueStr, "\n") {
+			valueStr = "\"" + strings.ReplaceAll(valueStr, "\"", "\"\"") + "\""
+		}
+		return valueStr, nil
+	}
 }

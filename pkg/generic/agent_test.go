@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -122,14 +123,14 @@ func TestAgentExecute(t *testing.T) {
 		t.Fatalf("Failed to create agent: %v", err)
 	}
 
-	// Test basic execution (will fail due to LLM not being available, but should not panic)
+	// Test basic execution - should fail with proper error about unimplemented LLM provider
 	err = agent.Execute("test input")
 
-	// We expect this to fail in testing environment, but it should be a controlled failure
+	// We expect this to fail due to unimplemented LLM providers
 	if err == nil {
-		t.Log("Execute succeeded (unexpected in test environment)")
-	} else {
-		t.Logf("Execute failed as expected in test environment: %v", err)
+		t.Error("Execute should fail due to unimplemented LLM provider")
+	} else if !strings.Contains(err.Error(), "not implemented") {
+		t.Errorf("Expected error about unimplemented provider, got: %v", err)
 	}
 }
 
@@ -178,11 +179,11 @@ func TestAgentExecuteWithContext(t *testing.T) {
 
 	err = agent.ExecuteWithContext(ctx, "test input")
 
-	// Expect failure due to either timeout or missing LLM credentials
+	// Expect failure due to unimplemented LLM provider or timeout
 	if err == nil {
-		t.Log("Execute succeeded (unexpected in test environment)")
-	} else {
-		t.Logf("Execute failed as expected: %v", err)
+		t.Error("Execute should fail due to unimplemented LLM provider or timeout")
+	} else if !strings.Contains(err.Error(), "not implemented") && !strings.Contains(err.Error(), "timeout") && !strings.Contains(err.Error(), "context") {
+		t.Errorf("Expected error about unimplemented provider or timeout, got: %v", err)
 	}
 }
 

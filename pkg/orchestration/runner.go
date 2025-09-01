@@ -2,6 +2,7 @@ package orchestration
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -311,8 +312,62 @@ func (o *MultiAgentOrchestrator) runAgent(agentRunner *AgentRunner, task string)
 		Logs:       []string{},
 		TokenUsage: typesTokenUsage,
 		Tokens:     typesTokenUsage.Total,
-		Cost:       0, // TODO: Calculate cost from token usage
+		Cost:       o.calculateCost(typesTokenUsage),
 	}
 
 	return result, nil
+}
+
+// calculateCost calculates the cost based on token usage and model
+func (o *MultiAgentOrchestrator) calculateCost(tokenUsage *types.AgentTokenUsage) float64 {
+	if tokenUsage == nil {
+		return 0.0
+	}
+
+	// Cost calculation based on model - simplified version of provider logic
+	model := tokenUsage.Model
+	promptTokens := float64(tokenUsage.Prompt)
+	completionTokens := float64(tokenUsage.Completion)
+
+	// Define pricing per 1K tokens based on common models
+	var inputCostPer1K, outputCostPer1K float64
+
+	// Extract provider from model name if it contains ":"
+	if contains := fmt.Sprintf("%s", model); len(contains) > 0 {
+		switch {
+		case containsIgnoreCase(model, "gpt-4"):
+			inputCostPer1K = 0.03   // GPT-4 pricing
+			outputCostPer1K = 0.06
+		case containsIgnoreCase(model, "gpt-3.5"):
+			inputCostPer1K = 0.0015 // GPT-3.5-turbo pricing
+			outputCostPer1K = 0.002
+		case containsIgnoreCase(model, "claude"):
+			inputCostPer1K = 0.008  // Claude pricing (approximate)
+			outputCostPer1K = 0.024
+		case containsIgnoreCase(model, "gemini"):
+			inputCostPer1K = 0.0005 // Gemini Pro pricing
+			outputCostPer1K = 0.0015
+		case containsIgnoreCase(model, "deepseek"):
+			inputCostPer1K = 0.0002 // DeepSeek pricing (approximate)
+			outputCostPer1K = 0.0006
+		case containsIgnoreCase(model, "ollama"):
+			return 0.0 // Local models are free
+		default:
+			// Default pricing for unknown models
+			inputCostPer1K = 0.001
+			outputCostPer1K = 0.002
+		}
+	}
+
+	inputCost := promptTokens * inputCostPer1K / 1000.0
+	outputCost := completionTokens * outputCostPer1K / 1000.0
+
+	return inputCost + outputCost
+}
+
+// containsIgnoreCase checks if a string contains a substring (case insensitive)
+func containsIgnoreCase(str, substr string) bool {
+	return len(str) >= len(substr) && 
+		   (len(substr) == 0 || 
+		    strings.Contains(strings.ToLower(str), strings.ToLower(substr)))
 }

@@ -2,6 +2,7 @@ package llm
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"testing"
 
@@ -82,6 +83,39 @@ func (m *MockProvider) GetModels(ctx context.Context) ([]types.ModelInfo, error)
 			SupportsImages: false,
 		},
 	}, nil
+}
+
+// ErrorProvider is a test provider that throws proper errors instead of mocking
+type ErrorProvider struct {
+	name string
+}
+
+func (m *ErrorProvider) GetName() string {
+	return m.name
+}
+
+func (m *ErrorProvider) GenerateResponse(ctx context.Context, messages []types.Message, options types.RequestOptions) (string, *types.ResponseMetadata, error) {
+	return "", nil, fmt.Errorf("%s LLM provider not implemented - real API integration required", m.name)
+}
+
+func (m *ErrorProvider) GenerateResponseStream(ctx context.Context, messages []types.Message, options types.RequestOptions, writer io.Writer) (*types.ResponseMetadata, error) {
+	return nil, fmt.Errorf("%s LLM provider streaming not implemented - real API integration required", m.name)
+}
+
+func (m *ErrorProvider) IsAvailable(ctx context.Context) error {
+	return fmt.Errorf("%s LLM provider not available - real API integration required", m.name)
+}
+
+func (m *ErrorProvider) EstimateTokens(messages []types.Message) (int, error) {
+	return 0, fmt.Errorf("%s LLM provider token estimation not implemented - real API integration required", m.name)
+}
+
+func (m *ErrorProvider) CalculateCost(usage types.TokenUsage) float64 {
+	return 0.0 // Can't calculate cost without real provider
+}
+
+func (m *ErrorProvider) GetModels(ctx context.Context) ([]types.ModelInfo, error) {
+	return nil, fmt.Errorf("%s LLM provider model listing not implemented - real API integration required", m.name)
 }
 
 func TestNewFactory(t *testing.T) {

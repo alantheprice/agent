@@ -335,47 +335,19 @@ type Message struct {
 
 // Provider-specific implementations (placeholders for now)
 func (llm *LLMClient) chatOpenAI(ctx context.Context, messages []Message) (*LLMResponse, error) {
-	// TODO: Implement OpenAI API integration
-	return &LLMResponse{
-		Content:    "Placeholder response from OpenAI",
-		TokensUsed: 100,
-		Cost:       0.002,
-		Model:      llm.config.Model,
-		Metadata:   map[string]interface{}{"provider": "openai"},
-	}, nil
+	return nil, fmt.Errorf("OpenAI LLM provider not implemented - real API integration required")
 }
 
 func (llm *LLMClient) chatAnthropic(ctx context.Context, messages []Message) (*LLMResponse, error) {
-	// TODO: Implement Anthropic API integration
-	return &LLMResponse{
-		Content:    "Placeholder response from Anthropic",
-		TokensUsed: 120,
-		Cost:       0.003,
-		Model:      llm.config.Model,
-		Metadata:   map[string]interface{}{"provider": "anthropic"},
-	}, nil
+	return nil, fmt.Errorf("Anthropic LLM provider not implemented - real API integration required")
 }
 
 func (llm *LLMClient) chatGemini(ctx context.Context, messages []Message) (*LLMResponse, error) {
-	// TODO: Implement Gemini API integration
-	return &LLMResponse{
-		Content:    "Placeholder response from Gemini",
-		TokensUsed: 80,
-		Cost:       0.001,
-		Model:      llm.config.Model,
-		Metadata:   map[string]interface{}{"provider": "gemini"},
-	}, nil
+	return nil, fmt.Errorf("Gemini LLM provider not implemented - real API integration required")
 }
 
 func (llm *LLMClient) chatOllama(ctx context.Context, messages []Message) (*LLMResponse, error) {
-	// TODO: Implement Ollama API integration
-	return &LLMResponse{
-		Content:    "Placeholder response from Ollama",
-		TokensUsed: 90,
-		Cost:       0.0, // Ollama is typically free
-		Model:      llm.config.Model,
-		Metadata:   map[string]interface{}{"provider": "ollama"},
-	}, nil
+	return nil, fmt.Errorf("Ollama LLM provider not implemented - real API integration required")
 }
 
 func (llm *LLMClient) chatDeepInfra(ctx context.Context, messages []Message) (*LLMResponse, error) {
@@ -383,14 +355,7 @@ func (llm *LLMClient) chatDeepInfra(ctx context.Context, messages []Message) (*L
 }
 
 func (llm *LLMClient) chatGroq(ctx context.Context, messages []Message) (*LLMResponse, error) {
-	// TODO: Implement Groq API integration
-	return &LLMResponse{
-		Content:    "Placeholder response from Groq",
-		TokensUsed: 95,
-		Cost:       0.001,
-		Model:      llm.config.Model,
-		Metadata:   map[string]interface{}{"provider": "groq"},
-	}, nil
+	return nil, fmt.Errorf("Groq LLM provider not implemented - real API integration required")
 }
 
 // callOpenAICompatibleAPI makes a call to an OpenAI-compatible API

@@ -5,18 +5,21 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"github.com/alantheprice/agent-template/pkg/embedding"
 )
 
 // Agent represents a generic AI agent
 type Agent struct {
-	config       *AgentConfig
-	logger       *slog.Logger
-	dataIngestor *DataIngestor
-	toolRegistry *ToolRegistry
-	llmClient    *LLMClient
-	workflow     *WorkflowEngine
-	outputWriter *OutputWriter
-	validator    *Validator
+	config               *AgentConfig
+	logger               *slog.Logger
+	dataIngestor         *DataIngestor
+	toolRegistry         *ToolRegistry
+	llmClient            *LLMClient
+	workflow             *WorkflowEngine
+	outputWriter         *OutputWriter
+	validator            *Validator
+	embeddingDataSources map[string]*embedding.EmbeddingDataSource
 }
 
 // ExecutionContext holds context for agent execution
@@ -54,8 +57,9 @@ type ExecutionMetrics struct {
 // NewAgent creates a new generic agent
 func NewAgent(config *AgentConfig, logger *slog.Logger) (*Agent, error) {
 	agent := &Agent{
-		config: config,
-		logger: logger,
+		config:               config,
+		logger:               logger,
+		embeddingDataSources: make(map[string]*embedding.EmbeddingDataSource),
 	}
 
 	// Initialize components
@@ -152,6 +156,13 @@ func (a *Agent) ExecuteWithContext(ctx context.Context, input string) error {
 		}
 		execCtx.Data["ingested_data"] = data
 		execCtx.Metrics.DataProcessed = int64(len(data))
+		
+		// Pass embedding data sources to tool registry
+		embeddingDataSources := a.dataIngestor.GetEmbeddingDataSources()
+		if len(embeddingDataSources) > 0 {
+			a.toolRegistry.SetEmbeddingDataSources(embeddingDataSources)
+			a.logger.Info("Set embedding data sources for tools", "count", len(embeddingDataSources))
+		}
 	}
 
 	// Step 2: Add input to context

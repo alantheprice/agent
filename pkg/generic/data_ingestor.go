@@ -16,9 +16,10 @@ import (
 
 // DataIngestor handles ingesting data from various sources
 type DataIngestor struct {
-	sources          []DataSource
-	embeddingsConfig *EmbeddingConfig
-	logger           *slog.Logger
+	sources              []DataSource
+	embeddingsConfig     *EmbeddingConfig
+	logger               *slog.Logger
+	embeddingDataSources map[string]*embedding.EmbeddingDataSource
 }
 
 // IngestedData represents data from a source
@@ -32,9 +33,10 @@ type IngestedData struct {
 // NewDataIngestor creates a new data ingestor
 func NewDataIngestor(sources []DataSource, embeddingsConfig *EmbeddingConfig, logger *slog.Logger) (*DataIngestor, error) {
 	return &DataIngestor{
-		sources:          sources,
-		embeddingsConfig: embeddingsConfig,
-		logger:           logger,
+		sources:              sources,
+		embeddingsConfig:     embeddingsConfig,
+		logger:               logger,
+		embeddingDataSources: make(map[string]*embedding.EmbeddingDataSource),
 	}, nil
 }
 
@@ -400,6 +402,9 @@ func (di *DataIngestor) ingestEmbedding(ctx context.Context, source DataSource) 
 		return nil, fmt.Errorf("failed to create embedding data source: %w", err)
 	}
 
+	// Store the embedding data source for later use by tools
+	di.embeddingDataSources[source.Name] = embeddingDataSource
+
 	// Ingest data into embeddings
 	stats, err := embeddingDataSource.IngestData(ctx)
 	if err != nil {
@@ -415,6 +420,11 @@ func (di *DataIngestor) ingestEmbedding(ctx context.Context, source DataSource) 
 		Data:     embeddings,
 		Metadata: stats,
 	}, nil
+}
+
+// GetEmbeddingDataSources returns the embedding data sources created during ingestion
+func (di *DataIngestor) GetEmbeddingDataSources() map[string]*embedding.EmbeddingDataSource {
+	return di.embeddingDataSources
 }
 
 // applyValidation validates data

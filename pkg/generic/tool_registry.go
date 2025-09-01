@@ -3,6 +3,7 @@ package generic
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +12,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"github.com/alantheprice/agent-template/pkg/embedding"
 )
 
 // GenericTool represents a tool that can be executed by the agent
@@ -22,10 +25,11 @@ type GenericTool interface {
 
 // ToolRegistry manages available tools
 type ToolRegistry struct {
-	tools    map[string]GenericTool
-	config   map[string]Tool
-	security *Security
-	logger   *slog.Logger
+	tools                map[string]GenericTool
+	config               map[string]Tool
+	security             *Security
+	logger               *slog.Logger
+	embeddingDataSources map[string]*embedding.EmbeddingDataSource
 }
 
 // BuiltinTool represents a built-in tool implementation
@@ -38,10 +42,11 @@ type BuiltinTool struct {
 // NewToolRegistry creates a new tool registry
 func NewToolRegistry(toolConfigs map[string]Tool, security *Security, logger *slog.Logger) (*ToolRegistry, error) {
 	registry := &ToolRegistry{
-		tools:    make(map[string]GenericTool),
-		config:   toolConfigs,
-		security: security,
-		logger:   logger,
+		tools:                make(map[string]GenericTool),
+		config:               toolConfigs,
+		security:             security,
+		logger:               logger,
+		embeddingDataSources: make(map[string]*embedding.EmbeddingDataSource),
 	}
 
 	// Register built-in tools
@@ -117,7 +122,6 @@ func (tr *ToolRegistry) registerBuiltinTools() {
 		executor:    tr.executeGitCommit,
 	}
 
-	// TODO: Implement embedding operations
 	tr.tools["embedding_ingest"] = &BuiltinTool{
 		name:        "embedding_ingest",
 		description: "Build embeddings for workspace files",
@@ -162,6 +166,11 @@ func getMapKeys(m map[string]GenericTool) []string {
 // RegisterTool registers a new tool
 func (tr *ToolRegistry) RegisterTool(name string, tool GenericTool) {
 	tr.tools[name] = tool
+}
+
+// SetEmbeddingDataSources sets the embedding data sources for tools to use
+func (tr *ToolRegistry) SetEmbeddingDataSources(dataSources map[string]*embedding.EmbeddingDataSource) {
+	tr.embeddingDataSources = dataSources
 }
 
 // ListTools returns all available tools
@@ -293,10 +302,66 @@ func (tr *ToolRegistry) executeListFiles(ctx context.Context, params map[string]
 		path = "." // Default to current directory
 	}
 
-	// TODO: Implement actual directory listing
-	// TODO: Add security checks
+	// Security check: validate path is allowed
+	if !tr.isPathAllowed(path) {
+		return nil, fmt.Errorf("path '%s' is not allowed by security configuration", path)
+	}
 
-	return []string{fmt.Sprintf("Files in %s would be listed here", path)}, nil
+	// Read directory
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list directory '%s': %w", path, err)
+	}
+
+	// Convert to string list with file info
+	var files []map[string]interface{}
+	for _, entry := range entries {
+		fileInfo, err := entry.Info()
+		if err != nil {
+			tr.logger.Debug("Failed to get file info", "file", entry.Name(), "error", err)
+			continue
+		}
+
+		files = append(files, map[string]interface{}{
+			"name":        entry.Name(),
+			"type":        getFileType(entry),
+			"size":        fileInfo.Size(),
+			"modified":    fileInfo.ModTime(),
+			"permissions": fileInfo.Mode().String(),
+		})
+	}
+
+	return map[string]interface{}{
+		"path":       path,
+		"file_count": len(files),
+		"files":      files,
+	}, nil
+}
+
+// getFileType determines the type of a directory entry
+func getFileType(entry os.DirEntry) string {
+	if entry.IsDir() {
+		return "directory"
+	}
+	if info, err := entry.Info(); err == nil {
+		mode := info.Mode()
+		if mode&os.ModeSymlink != 0 {
+			return "symlink"
+		}
+		if mode&os.ModeCharDevice != 0 {
+			return "char_device"
+		}
+		if mode&os.ModeDevice != 0 {
+			return "device"
+		}
+		if mode&os.ModeNamedPipe != 0 {
+			return "pipe"
+		}
+		if mode&os.ModeSocket != 0 {
+			return "socket"
+		}
+	}
+	return "file"
 }
 
 func (tr *ToolRegistry) executeShellCommand(ctx context.Context, params map[string]interface{}) (interface{}, error) {
@@ -405,9 +470,17 @@ func (tr *ToolRegistry) executeJSONParse(ctx context.Context, params map[string]
 		return nil, fmt.Errorf("json parameter is required and must be a string")
 	}
 
-	// TODO: Implement actual JSON parsing
+	// Parse JSON string into interface{}
+	var parsed interface{}
+	if err := json.Unmarshal([]byte(jsonStr), &parsed); err != nil {
+		return nil, fmt.Errorf("failed to parse JSON: %w", err)
+	}
 
-	return fmt.Sprintf("Parsed JSON from: %s", jsonStr), nil
+	return map[string]interface{}{
+		"parsed_data": parsed,
+		"type":        fmt.Sprintf("%T", parsed),
+		"success":     true,
+	}, nil
 }
 
 func (tr *ToolRegistry) executeJSONFormat(ctx context.Context, params map[string]interface{}) (interface{}, error) {
@@ -416,9 +489,38 @@ func (tr *ToolRegistry) executeJSONFormat(ctx context.Context, params map[string
 		return nil, fmt.Errorf("data parameter is required")
 	}
 
-	// TODO: Implement actual JSON formatting
+	// Get formatting options
+	indent := "  " // default indent
+	if indentParam, ok := params["indent"].(string); ok {
+		indent = indentParam
+	}
 
-	return fmt.Sprintf("JSON formatted data: %v", data), nil
+	compact := false
+	if compactParam, ok := params["compact"].(bool); ok {
+		compact = compactParam
+	}
+
+	// Format JSON
+	var jsonBytes []byte
+	var err error
+
+	if compact {
+		jsonBytes, err = json.Marshal(data)
+	} else {
+		jsonBytes, err = json.MarshalIndent(data, "", indent)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to format JSON: %w", err)
+	}
+
+	return map[string]interface{}{
+		"json":     string(jsonBytes),
+		"compact":  compact,
+		"indent":   indent,
+		"size":     len(jsonBytes),
+		"success":  true,
+	}, nil
 }
 
 // Security helper methods
@@ -451,6 +553,12 @@ func (tr *ToolRegistry) validateFilePath(path string) error {
 	}
 
 	return nil
+}
+
+// isPathAllowed checks if a path is allowed (simpler version of validateFilePath)
+func (tr *ToolRegistry) isPathAllowed(path string) bool {
+	err := tr.validateFilePath(path)
+	return err == nil
 }
 
 // copyFile creates a backup copy of a file
@@ -558,14 +666,25 @@ func (tr *ToolRegistry) executeEmbeddingIngest(ctx context.Context, params map[s
 
 	tr.logger.Info("Executing embedding ingest", "source_name", sourceName)
 
-	// This would typically load the source configuration and create embeddings
-	// For now, return a placeholder implementation
+	// Check if embedding data source exists
+	embeddingDataSource, exists := tr.embeddingDataSources[sourceName]
+	if !exists {
+		return nil, fmt.Errorf("embedding data source '%s' not found", sourceName)
+	}
+
+	// Trigger re-ingestion of data
+	stats, err := embeddingDataSource.IngestData(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to ingest embedding data for source '%s': %w", sourceName, err)
+	}
+
 	return map[string]interface{}{
 		"source_name":        sourceName,
 		"status":             "completed",
-		"files_processed":    10,
-		"embeddings_created": 15,
+		"files_processed":    stats["files_processed"],
+		"embeddings_created": stats["embeddings_created"],
 		"message":            fmt.Sprintf("Embedding ingest completed for source: %s", sourceName),
+		"stats":              stats,
 	}, nil
 }
 
@@ -575,7 +694,11 @@ func (tr *ToolRegistry) executeEmbeddingSearch(ctx context.Context, params map[s
 		return nil, fmt.Errorf("query parameter is required and must be a string")
 	}
 
-	sourceName, _ := params["source_name"].(string)
+	sourceName, ok := params["source_name"].(string)
+	if !ok {
+		return nil, fmt.Errorf("source_name parameter is required and must be a string")
+	}
+
 	limit := 3 // default
 	if limitParam, ok := params["limit"].(float64); ok {
 		limit = int(limitParam)
@@ -588,9 +711,34 @@ func (tr *ToolRegistry) executeEmbeddingSearch(ctx context.Context, params map[s
 
 	tr.logger.Info("Executing embedding search", "query", query, "source_name", sourceName, "limit", limit)
 
-	// Simple file search based on query keywords
-	queryLower := strings.ToLower(query)
-	results := tr.findRelevantFiles(queryLower, limit)
+	// Check if embedding data source exists
+	embeddingDataSource, exists := tr.embeddingDataSources[sourceName]
+	if !exists {
+		return nil, fmt.Errorf("embedding data source '%s' not found", sourceName)
+	}
+
+	// Perform semantic search using the embedding data source
+	searchResults, similarities, err := embeddingDataSource.SearchContent(ctx, query, limit, minSimilarity)
+	if err != nil {
+		return nil, fmt.Errorf("failed to search embeddings for source '%s': %w", sourceName, err)
+	}
+
+	// Convert results to the expected format
+	var results []map[string]interface{}
+	for i, result := range searchResults {
+		similarity := 0.0
+		if i < len(similarities) {
+			similarity = similarities[i]
+		}
+		results = append(results, map[string]interface{}{
+			"file_path":   result.Source,
+			"content":     result.Content,
+			"similarity":  similarity,
+			"metadata":    result.Metadata,
+			"type":        result.Type,
+			"id":          result.ID,
+		})
+	}
 
 	return map[string]interface{}{
 		"query":          query,
@@ -598,87 +746,8 @@ func (tr *ToolRegistry) executeEmbeddingSearch(ctx context.Context, params map[s
 		"limit":          limit,
 		"min_similarity": minSimilarity,
 		"results":        results,
-		"message":        fmt.Sprintf("Found %d matching files for query: %s", len(results), query),
+		"total_results":  len(results),
+		"message":        fmt.Sprintf("Found %d matching results for query: %s", len(results), query),
 	}, nil
 }
 
-// findRelevantFiles performs a simple heuristic search for relevant files
-func (tr *ToolRegistry) findRelevantFiles(query string, limit int) []map[string]interface{} {
-	var results []map[string]interface{}
-
-	// Keywords that suggest certain file types
-	queryWords := strings.Fields(query)
-
-	// Check current directory for Go files (since this is a Go project)
-	files := []map[string]interface{}{
-		{
-			"file_path":       "./main.go",
-			"similarity":      0.9,
-			"content_preview": "Main entry point - likely contains command definitions",
-			"relevance":       tr.calculateRelevance(queryWords, []string{"main", "command", "cli", "entry"}),
-		},
-		{
-			"file_path":       "./cmd/agent.go",
-			"similarity":      0.85,
-			"content_preview": "Agent command implementation",
-			"relevance":       tr.calculateRelevance(queryWords, []string{"agent", "command", "cli"}),
-		},
-		{
-			"file_path":       "./cmd/process.go",
-			"similarity":      0.80,
-			"content_preview": "Process command implementation",
-			"relevance":       tr.calculateRelevance(queryWords, []string{"process", "command", "workflow"}),
-		},
-		{
-			"file_path":       "./cmd/root.go",
-			"similarity":      0.75,
-			"content_preview": "Root command setup and CLI structure",
-			"relevance":       tr.calculateRelevance(queryWords, []string{"root", "command", "cli", "cobra", "config"}),
-		},
-		{
-			"file_path":       "./pkg/generic/agent.go",
-			"similarity":      0.70,
-			"content_preview": "Core agent logic and processing",
-			"relevance":       tr.calculateRelevance(queryWords, []string{"agent", "core", "logic"}),
-		},
-	}
-
-	// Sort by relevance
-	for i := 0; i < len(files); i++ {
-		for j := i + 1; j < len(files); j++ {
-			if files[i]["relevance"].(float64) < files[j]["relevance"].(float64) {
-				files[i], files[j] = files[j], files[i]
-			}
-		}
-	}
-
-	// Return top results
-	for i := 0; i < limit && i < len(files); i++ {
-		result := map[string]interface{}{
-			"file_path":       files[i]["file_path"],
-			"similarity":      files[i]["similarity"],
-			"content_preview": files[i]["content_preview"],
-		}
-		results = append(results, result)
-	}
-
-	return results
-}
-
-// calculateRelevance calculates a simple relevance score
-func (tr *ToolRegistry) calculateRelevance(queryWords, fileKeywords []string) float64 {
-	matches := 0
-	for _, qword := range queryWords {
-		for _, fword := range fileKeywords {
-			if strings.Contains(strings.ToLower(fword), strings.ToLower(qword)) ||
-				strings.Contains(strings.ToLower(qword), strings.ToLower(fword)) {
-				matches++
-				break
-			}
-		}
-	}
-	if len(queryWords) == 0 {
-		return 0.5 // default relevance
-	}
-	return float64(matches) / float64(len(queryWords))
-}

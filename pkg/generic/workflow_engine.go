@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"math/rand"
 	"os"
 	"os/exec"
 	"strings"
@@ -163,7 +164,25 @@ func (we *WorkflowEngine) executeStep(ctx context.Context, step Step, execCtx *E
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if attempt > 1 {
 			we.logger.Info("Retrying step", "step", step.Name, "attempt", attempt)
-			// TODO: Implement backoff strategy
+			
+			// Implement exponential backoff with jitter
+			backoffDuration := time.Duration(attempt-1) * time.Second * time.Duration(1<<uint(attempt-2))
+			if backoffDuration > 30*time.Second {
+				backoffDuration = 30 * time.Second // Cap at 30 seconds
+			}
+			
+			// Add jitter (random delay up to 1 second)
+			jitter := time.Duration(rand.Intn(1000)) * time.Millisecond
+			totalDelay := backoffDuration + jitter
+			
+			we.logger.Debug("Applying backoff delay", "delay", totalDelay, "attempt", attempt)
+			
+			select {
+			case <-time.After(totalDelay):
+				// Continue with retry
+			case <-ctx.Done():
+				return nil, fmt.Errorf("context cancelled during backoff: %w", ctx.Err())
+			}
 		}
 
 		var output interface{}
@@ -286,9 +305,19 @@ func (we *WorkflowEngine) executeLLMStep(ctx context.Context, step Step, execCtx
 		return nil, fmt.Errorf("failed to render prompt template: %w", err)
 	}
 
-	// TODO: Add system prompt handling
-
-	response, err := we.llmClient.Complete(ctx, renderedPrompt)
+	// Check for system prompt in step config
+	var response *LLMResponse
+	
+	if systemPrompt, ok := step.Config["system_prompt"].(string); ok && systemPrompt != "" {
+		// Render system prompt template if provided
+		renderedSystemPrompt, err := we.templateEngine.RenderTemplate(systemPrompt, previousResults, execCtx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to render system prompt template: %w", err)
+		}
+		response, err = we.llmClient.CompleteWithSystem(ctx, renderedSystemPrompt, renderedPrompt)
+	} else {
+		response, err = we.llmClient.Complete(ctx, renderedPrompt)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -313,9 +342,19 @@ func (we *WorkflowEngine) executeLLMDisplayStep(ctx context.Context, step Step, 
 		return nil, fmt.Errorf("failed to render prompt template: %w", err)
 	}
 
-	// TODO: Add system prompt handling
-
-	response, err := we.llmClient.Complete(ctx, renderedPrompt)
+	// Check for system prompt in step config
+	var response *LLMResponse
+	
+	if systemPrompt, ok := step.Config["system_prompt"].(string); ok && systemPrompt != "" {
+		// Render system prompt template if provided
+		renderedSystemPrompt, err := we.templateEngine.RenderTemplate(systemPrompt, previousResults, execCtx)
+		if err != nil {
+			return nil, fmt.Errorf("failed to render system prompt template: %w", err)
+		}
+		response, err = we.llmClient.CompleteWithSystem(ctx, renderedSystemPrompt, renderedPrompt)
+	} else {
+		response, err = we.llmClient.Complete(ctx, renderedPrompt)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -841,8 +880,72 @@ func (we *WorkflowEngine) executeDisplayStep(ctx context.Context, step Step, exe
 
 // executeConditionStep executes a condition step
 func (we *WorkflowEngine) executeConditionStep(ctx context.Context, step Step, execCtx *ExecutionContext, previousResults map[string]*StepResult) (interface{}, error) {
-	// TODO: Implement condition evaluation
-	return true, nil
+	// Get condition expression from config
+	conditionExpr, ok := step.Config["condition"].(string)
+	if !ok {
+		return false, fmt.Errorf("condition parameter is required for condition step")
+	}
+
+	// Render the condition template with current context
+	renderedCondition, err := we.templateEngine.RenderTemplate(conditionExpr, previousResults, execCtx)
+	if err != nil {
+		return false, fmt.Errorf("failed to render condition template: %w", err)
+	}
+
+	// Simple condition evaluation - check for basic conditions
+	result := we.evaluateSimpleCondition(renderedCondition, previousResults, execCtx)
+	
+	we.logger.Debug("Condition evaluation", 
+		"condition", conditionExpr, 
+		"rendered", renderedCondition,
+		"result", result)
+
+	return result, nil
+}
+
+// evaluateSimpleCondition performs basic condition evaluation
+func (we *WorkflowEngine) evaluateSimpleCondition(condition string, previousResults map[string]*StepResult, execCtx *ExecutionContext) bool {
+	condition = strings.TrimSpace(condition)
+	
+	// Handle basic boolean values
+	switch strings.ToLower(condition) {
+	case "true", "yes", "1":
+		return true
+	case "false", "no", "0", "":
+		return false
+	}
+	
+	// Handle simple string comparisons
+	if strings.Contains(condition, "==") {
+		parts := strings.Split(condition, "==")
+		if len(parts) == 2 {
+			left := strings.TrimSpace(parts[0])
+			right := strings.TrimSpace(parts[1])
+			return left == right
+		}
+	}
+	
+	if strings.Contains(condition, "!=") {
+		parts := strings.Split(condition, "!=")
+		if len(parts) == 2 {
+			left := strings.TrimSpace(parts[0])
+			right := strings.TrimSpace(parts[1])
+			return left != right
+		}
+	}
+	
+	// Check for "contains" operation
+	if strings.Contains(condition, " contains ") {
+		parts := strings.Split(condition, " contains ")
+		if len(parts) == 2 {
+			left := strings.TrimSpace(parts[0])
+			right := strings.TrimSpace(parts[1])
+			return strings.Contains(left, right)
+		}
+	}
+	
+	// Default: treat non-empty string as true
+	return condition != ""
 }
 
 // LoopConfig represents configuration for loop steps
@@ -1101,8 +1204,116 @@ func (we *WorkflowEngine) evaluateLoopBreakConditions(conditions []LoopBreakCond
 
 // executeParallelStep executes parallel steps
 func (we *WorkflowEngine) executeParallelStep(ctx context.Context, step Step, execCtx *ExecutionContext, previousResults map[string]*StepResult) (interface{}, error) {
-	// TODO: Implement parallel execution
-	return "parallel execution completed", nil
+	// Get parallel steps from config
+	parallelStepsConfig, ok := step.Config["steps"].([]interface{})
+	if !ok {
+		return nil, fmt.Errorf("steps parameter is required for parallel step")
+	}
+
+	// Convert to Step structs
+	var parallelSteps []Step
+	for i, stepInterface := range parallelStepsConfig {
+		stepMap, ok := stepInterface.(map[string]interface{})
+		if !ok {
+			return nil, fmt.Errorf("invalid step configuration at index %d", i)
+		}
+
+		parallelStep := Step{}
+		if name, ok := stepMap["name"].(string); ok {
+			parallelStep.Name = name
+		} else {
+			parallelStep.Name = fmt.Sprintf("parallel_%d", i)
+		}
+		if stepType, ok := stepMap["type"].(string); ok {
+			parallelStep.Type = stepType
+		}
+		if config, ok := stepMap["config"].(map[string]interface{}); ok {
+			parallelStep.Config = config
+		}
+
+		parallelSteps = append(parallelSteps, parallelStep)
+	}
+
+	// Execute steps in parallel using goroutines
+	type parallelResult struct {
+		index  int
+		name   string
+		result interface{}
+		err    error
+	}
+
+	resultChan := make(chan parallelResult, len(parallelSteps))
+	
+	// Start all parallel steps
+	for i, parallelStep := range parallelSteps {
+		go func(index int, step Step) {
+			defer func() {
+				if r := recover(); r != nil {
+					resultChan <- parallelResult{
+						index: index,
+						name:  step.Name,
+						err:   fmt.Errorf("panic in parallel step: %v", r),
+					}
+				}
+			}()
+
+			result, err := we.executeStepByType(ctx, step, execCtx, previousResults)
+			resultChan <- parallelResult{
+				index:  index,
+				name:   step.Name,
+				result: result,
+				err:    err,
+			}
+		}(i, parallelStep)
+	}
+
+	// Collect results
+	results := make(map[string]interface{})
+	var errors []string
+	
+	for i := 0; i < len(parallelSteps); i++ {
+		select {
+		case result := <-resultChan:
+			if result.err != nil {
+				errors = append(errors, fmt.Sprintf("Step '%s': %v", result.name, result.err))
+			} else {
+				results[result.name] = result.result
+			}
+		case <-ctx.Done():
+			return nil, fmt.Errorf("parallel execution cancelled: %w", ctx.Err())
+		}
+	}
+
+	response := map[string]interface{}{
+		"results":   results,
+		"completed": len(results),
+		"total":     len(parallelSteps),
+	}
+
+	if len(errors) > 0 {
+		response["errors"] = errors
+		return response, fmt.Errorf("some parallel steps failed: %v", errors)
+	}
+
+	return response, nil
+}
+
+// executeStepByType executes a step based on its type (helper for parallel execution)
+func (we *WorkflowEngine) executeStepByType(ctx context.Context, step Step, execCtx *ExecutionContext, previousResults map[string]*StepResult) (interface{}, error) {
+	switch step.Type {
+	case "tool":
+		return we.executeToolStep(ctx, step, execCtx, previousResults)
+	case "llm":
+		return we.executeLLMStep(ctx, step, execCtx, previousResults)
+	case "llm_display":
+		return we.executeLLMDisplayStep(ctx, step, execCtx, previousResults)
+	case "display":
+		return we.executeDisplayStep(ctx, step, execCtx, previousResults)
+	case "condition":
+		return we.executeConditionStep(ctx, step, execCtx, previousResults)
+	default:
+		return nil, fmt.Errorf("unsupported step type for parallel execution: %s", step.Type)
+	}
 }
 
 // buildDependencyGraph builds a dependency graph for workflow steps using topological sorting
