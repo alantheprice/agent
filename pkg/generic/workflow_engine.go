@@ -11,19 +11,27 @@ import (
 
 // WorkflowEngine executes workflows
 type WorkflowEngine struct {
-	toolRegistry *ToolRegistry
-	llmClient    *LLMClient
-	validator    *Validator
-	logger       *slog.Logger
+	toolRegistry      *ToolRegistry
+	llmClient         *LLMClient
+	validator         *Validator
+	templateEngine    *TemplateEngine
+	transformPipeline *TransformPipeline
+	logger            *slog.Logger
 }
 
 // NewWorkflowEngine creates a new workflow engine
 func NewWorkflowEngine(workflows []Workflow, toolRegistry *ToolRegistry, llmClient *LLMClient, validator *Validator, logger *slog.Logger) (*WorkflowEngine, error) {
+	templateEngine := NewTemplateEngine(logger)
+	transformRegistry := NewTransformRegistry(logger)
+	transformPipeline := NewTransformPipeline(transformRegistry, templateEngine, logger)
+
 	return &WorkflowEngine{
-		toolRegistry: toolRegistry,
-		llmClient:    llmClient,
-		validator:    validator,
-		logger:       logger,
+		toolRegistry:      toolRegistry,
+		llmClient:         llmClient,
+		validator:         validator,
+		templateEngine:    templateEngine,
+		transformPipeline: transformPipeline,
+		logger:            logger,
 	}, nil
 }
 
@@ -46,8 +54,18 @@ func (we *WorkflowEngine) Execute(ctx context.Context, workflow *Workflow, execC
 	}
 
 	// Execute steps in dependency order
+	we.logger.Debug("Dependency graph", "total_levels", len(dependencyGraph))
+	for i, level := range dependencyGraph {
+		stepNames := make([]string, len(level))
+		for j, step := range level {
+			stepNames[j] = step.Name
+		}
+		we.logger.Debug("Dependency level", "level", i, "steps", stepNames)
+	}
+
 	executedSteps := make(map[string]*StepResult)
-	for _, stepGroup := range dependencyGraph {
+	for i, stepGroup := range dependencyGraph {
+		we.logger.Debug("Executing dependency level", "level", i, "step_count", len(stepGroup))
 		// Steps in the same group can be executed in parallel
 		if len(stepGroup) == 1 {
 			// Single step execution
@@ -97,13 +115,21 @@ func (we *WorkflowEngine) Execute(ctx context.Context, workflow *Workflow, execC
 
 // executeStep executes a single workflow step
 func (we *WorkflowEngine) executeStep(ctx context.Context, step Step, execCtx *ExecutionContext, previousResults map[string]*StepResult) (*StepResult, error) {
-	startTime := time.Now()
 	we.logger.Info("Executing step", "step", step.Name, "type", step.Type)
 
+	startTime := time.Now()
 	result := &StepResult{
-		StepName: step.Name,
-		Success:  false,
-		Metadata: make(map[string]interface{}),
+		StepName:      step.Name,
+		ExecutionTime: 0,
+		Metadata:      make(map[string]interface{}),
+	}
+
+	// Execute pre-transforms (context transforms)
+	err := we.transformPipeline.ExecutePreTransforms(step, previousResults, execCtx)
+	if err != nil {
+		result.Success = false
+		result.Error = err
+		return result, fmt.Errorf("pre-transform failed: %w", err)
 	}
 
 	defer func() {
@@ -149,6 +175,15 @@ func (we *WorkflowEngine) executeStep(ctx context.Context, step Step, execCtx *E
 		if err == nil {
 			result.Success = true
 			result.Output = output
+			result.ExecutionTime = time.Since(startTime)
+
+			// Execute post-transforms
+			postErr := we.transformPipeline.ExecutePostTransforms(step, result, previousResults, execCtx)
+			if postErr != nil {
+				we.logger.Warn("Post-transform failed", "step", step.Name, "error", postErr)
+				// Don't fail the step for post-transform errors, just log them
+			}
+
 			return result, nil
 		}
 
@@ -156,7 +191,9 @@ func (we *WorkflowEngine) executeStep(ctx context.Context, step Step, execCtx *E
 		we.logger.Warn("Step attempt failed", "step", step.Name, "attempt", attempt, "error", err)
 	}
 
+	result.Success = false
 	result.Error = lastErr
+	result.ExecutionTime = time.Since(startTime)
 	return result, lastErr
 }
 
@@ -197,10 +234,15 @@ func (we *WorkflowEngine) executeLLMStep(ctx context.Context, step Step, execCtx
 		return nil, fmt.Errorf("prompt not specified in step config")
 	}
 
-	// TODO: Template rendering for prompt with context variables
+	// Template rendering for prompt with context variables
+	renderedPrompt, err := we.templateEngine.RenderTemplate(prompt, previousResults, execCtx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to render prompt template: %w", err)
+	}
+
 	// TODO: Add system prompt handling
 
-	response, err := we.llmClient.Complete(ctx, prompt)
+	response, err := we.llmClient.Complete(ctx, renderedPrompt)
 	if err != nil {
 		return nil, err
 	}
@@ -219,10 +261,15 @@ func (we *WorkflowEngine) executeLLMDisplayStep(ctx context.Context, step Step, 
 		return nil, fmt.Errorf("prompt not specified in step config")
 	}
 
-	// TODO: Template rendering for prompt with context variables
+	// Template rendering for prompt with context variables
+	renderedPrompt, err := we.templateEngine.RenderTemplate(prompt, previousResults, execCtx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to render prompt template: %w", err)
+	}
+
 	// TODO: Add system prompt handling
 
-	response, err := we.llmClient.Complete(ctx, prompt)
+	response, err := we.llmClient.Complete(ctx, renderedPrompt)
 	if err != nil {
 		return nil, err
 	}
@@ -420,3 +467,6 @@ func (we *WorkflowEngine) executeScriptStep(ctx context.Context, step Step, exec
 
 	return string(output), nil
 }
+
+// Legacy renderTemplate function - now handled by TemplateEngine
+// This is kept for backward compatibility if needed

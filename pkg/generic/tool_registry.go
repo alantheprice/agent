@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -121,11 +122,28 @@ func (tr *ToolRegistry) registerBuiltinTools() {
 func (tr *ToolRegistry) GetTool(name string) (GenericTool, bool) {
 	// Check if tool is enabled in config
 	if config, exists := tr.config[name]; exists && !config.Enabled {
+		tr.logger.Debug("Tool disabled in config", "tool", name)
 		return nil, false
 	}
 
+	// Look up tool in registry
 	tool, exists := tr.tools[name]
-	return tool, exists
+	if !exists {
+		tr.logger.Debug("Tool not found in registry", "tool", name, "available_tools", getMapKeys(tr.tools))
+		return nil, false
+	}
+
+	tr.logger.Debug("Tool found", "tool", name)
+	return tool, true
+}
+
+// Helper function to get map keys for debugging
+func getMapKeys(m map[string]GenericTool) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // RegisterTool registers a new tool
@@ -274,11 +292,44 @@ func (tr *ToolRegistry) executeShellCommand(ctx context.Context, params map[stri
 		return nil, fmt.Errorf("command parameter is required and must be a string")
 	}
 
-	// TODO: Add security checks against allowed commands
-	// TODO: Implement actual shell execution with timeout
-	// TODO: Add proper error handling
+	tr.logger.Debug("Executing shell command", "command", command)
 
-	return fmt.Sprintf("Would execute: %s", command), nil
+	// Set timeout
+	timeout := 30 * time.Second
+	if timeoutParam, ok := params["timeout"].(float64); ok {
+		timeout = time.Duration(timeoutParam) * time.Second
+	}
+
+	ctxWithTimeout, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	// Execute the command using bash -c
+	cmd := exec.CommandContext(ctxWithTimeout, "bash", "-c", command)
+
+	// Capture both stdout and stderr
+	output, err := cmd.CombinedOutput()
+
+	result := map[string]interface{}{
+		"command": command,
+		"output":  string(output),
+		"success": err == nil,
+	}
+
+	if err != nil {
+		tr.logger.Error("Shell command failed",
+			"command", command,
+			"error", err,
+			"output", string(output))
+		result["error"] = err.Error()
+		// Return result with error info, don't fail completely
+		return result, nil
+	}
+
+	tr.logger.Debug("Shell command executed successfully",
+		"command", command,
+		"output_length", len(output))
+
+	return result, nil
 }
 
 func (tr *ToolRegistry) executeAskUser(ctx context.Context, params map[string]interface{}) (interface{}, error) {

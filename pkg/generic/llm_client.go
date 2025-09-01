@@ -1,6 +1,7 @@
 package generic
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -9,6 +10,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -28,12 +30,39 @@ type LLMResponse struct {
 	Metadata   map[string]interface{} `json:"metadata"`
 }
 
+// GetConfig returns the LLM configuration
+func (llm *LLMClient) GetConfig() LLMConfig {
+	return llm.config
+}
+
 // NewLLMClient creates a new LLM client
 func NewLLMClient(config LLMConfig, logger *slog.Logger) (*LLMClient, error) {
-	// Resolve API key from environment if not provided
+	// Resolve API key from layered config first, then environment if not provided
 	if config.APIKey == "" {
-		config.APIKey = getAPIKeyFromEnv(config.Provider)
+		config.APIKey = getAPIKeyFromConfig(config.Provider)
+		logger.Debug("API key from config", "provider", config.Provider, "found", config.APIKey != "")
+		if config.APIKey == "" {
+			config.APIKey = getAPIKeyFromEnv(config.Provider)
+			logger.Debug("API key from env", "provider", config.Provider, "found", config.APIKey != "")
+		}
+
+		// If still no API key, prompt user to enter one
+		if config.APIKey == "" {
+			logger.Info("No API key found, prompting user", "provider", config.Provider)
+			var err error
+			config.APIKey, err = promptForAPIKey(config.Provider)
+			if err != nil {
+				return nil, fmt.Errorf("failed to get API key for %s: %w", config.Provider, err)
+			}
+		}
 	}
+
+	// Validate we have an API key
+	if config.APIKey == "" {
+		return nil, fmt.Errorf("no API key available for provider %s", config.Provider)
+	}
+
+	logger.Info("LLM client initialized", "provider", config.Provider, "model", config.Model, "has_api_key", config.APIKey != "")
 
 	return &LLMClient{
 		config: config,
@@ -63,6 +92,196 @@ func getAPIKeyFromEnv(provider string) string {
 
 	// Fallback: try generic API_KEY environment variable
 	return os.Getenv("API_KEY")
+}
+
+// getAPIKeyFromConfig gets API key from layered configuration
+func getAPIKeyFromConfig(provider string) string {
+	// Import the layered config package
+	layeredConfig := newLayeredProvider()
+	if layeredConfig == nil {
+		return ""
+	}
+
+	// Load config from files
+	layeredConfig.ReloadConfig()
+
+	// Try to get provider config
+	providerConfig, err := layeredConfig.GetProviderConfig(provider)
+	if err != nil {
+		return ""
+	}
+
+	return providerConfig.APIKey
+}
+
+// newLayeredProvider creates a layered config provider (helper function)
+func newLayeredProvider() configProvider {
+	// This is a simplified version - in practice you'd import the actual provider
+	home, _ := os.UserHomeDir()
+	configPath := filepath.Join(home, ".ledit", "config.json")
+
+	// Load config from file if it exists
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil
+	}
+
+	var config map[string]interface{}
+	if err := json.Unmarshal(data, &config); err != nil {
+		return nil
+	}
+
+	return &simpleConfigProvider{config: config}
+}
+
+// Simple config provider interface for our needs
+type configProvider interface {
+	GetProviderConfig(providerName string) (*providerConfig, error)
+	ReloadConfig() error
+}
+
+// Simple provider config struct
+type providerConfig struct {
+	APIKey string `json:"api_key"`
+	Name   string `json:"name"`
+	Model  string `json:"model"`
+}
+
+// Simple implementation for loading from .ledit/config.json
+type simpleConfigProvider struct {
+	config map[string]interface{}
+}
+
+func (s *simpleConfigProvider) ReloadConfig() error {
+	return nil // Already loaded in constructor
+}
+
+func (s *simpleConfigProvider) GetProviderConfig(providerName string) (*providerConfig, error) {
+	// Look for providers.{providerName} in config
+	providersKey := "providers"
+	if providers, exists := s.config[providersKey]; exists {
+		if providersMap, ok := providers.(map[string]interface{}); ok {
+			if providerData, exists := providersMap[providerName]; exists {
+				if providerMap, ok := providerData.(map[string]interface{}); ok {
+					config := &providerConfig{Name: providerName}
+					if apiKey, exists := providerMap["api_key"]; exists {
+						if keyStr, ok := apiKey.(string); ok {
+							config.APIKey = keyStr
+						}
+					}
+					if model, exists := providerMap["model"]; exists {
+						if modelStr, ok := model.(string); ok {
+							config.Model = modelStr
+						}
+					}
+					return config, nil
+				}
+			}
+		}
+	}
+	return nil, fmt.Errorf("provider %s not found in config", providerName)
+}
+
+// promptForAPIKey prompts the user to enter an API key for the given provider
+func promptForAPIKey(provider string) (string, error) {
+	fmt.Printf("API key for %s not found. Please enter your %s API key: ", provider, provider)
+
+	scanner := bufio.NewScanner(os.Stdin)
+	if !scanner.Scan() {
+		return "", fmt.Errorf("failed to read API key")
+	}
+
+	apiKey := strings.TrimSpace(scanner.Text())
+	if apiKey == "" {
+		return "", fmt.Errorf("API key cannot be empty")
+	}
+
+	// Save the API key to config
+	if err := saveAPIKeyToConfig(provider, apiKey); err != nil {
+		// Log warning but don't fail - the key can still be used for this session
+		fmt.Printf("Warning: failed to save API key to config: %v\n", err)
+	} else {
+		fmt.Printf("API key saved to ~/.ledit/config.json\n")
+	}
+
+	return apiKey, nil
+}
+
+// saveAPIKeyToConfig saves an API key to the configuration file
+func saveAPIKeyToConfig(provider, apiKey string) error {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("failed to get home directory: %w", err)
+	}
+
+	configDir := filepath.Join(home, ".ledit")
+	configPath := filepath.Join(configDir, "config.json")
+
+	// Ensure config directory exists
+	if err := os.MkdirAll(configDir, 0755); err != nil {
+		return fmt.Errorf("failed to create config directory: %w", err)
+	}
+
+	// Load existing config or create new one
+	var config map[string]interface{}
+	if data, err := os.ReadFile(configPath); err == nil {
+		if err := json.Unmarshal(data, &config); err != nil {
+			return fmt.Errorf("failed to parse existing config: %w", err)
+		}
+	} else {
+		// Create new config structure
+		config = map[string]interface{}{
+			"providers": map[string]interface{}{},
+			"agent": map[string]interface{}{
+				"max_retries":      3,
+				"default_provider": provider,
+			},
+		}
+	}
+
+	// Ensure providers section exists
+	providers, ok := config["providers"].(map[string]interface{})
+	if !ok {
+		providers = make(map[string]interface{})
+		config["providers"] = providers
+	}
+
+	// Update or create provider config
+	providerConfig, ok := providers[provider].(map[string]interface{})
+	if !ok {
+		providerConfig = make(map[string]interface{})
+		providers[provider] = providerConfig
+	}
+
+	// Set the API key
+	providerConfig["api_key"] = apiKey
+
+	// Add default model if not present
+	if _, hasModel := providerConfig["model"]; !hasModel {
+		switch provider {
+		case "deepinfra":
+			providerConfig["model"] = "deepseek-ai/DeepSeek-V3.1"
+			providerConfig["base_url"] = "https://api.deepinfra.com/v1/openai"
+		case "openai":
+			providerConfig["model"] = "gpt-4"
+		case "anthropic":
+			providerConfig["model"] = "claude-3-sonnet-20240229"
+		case "gemini":
+			providerConfig["model"] = "gemini-pro"
+		}
+	}
+
+	// Write updated config back to file
+	data, err := json.MarshalIndent(config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal config: %w", err)
+	}
+
+	if err := os.WriteFile(configPath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write config file: %w", err)
+	}
+
+	return nil
 }
 
 // Chat sends a chat message to the LLM
@@ -176,6 +395,8 @@ func (llm *LLMClient) chatGroq(ctx context.Context, messages []Message) (*LLMRes
 
 // callOpenAICompatibleAPI makes a call to an OpenAI-compatible API
 func (llm *LLMClient) callOpenAICompatibleAPI(ctx context.Context, messages []Message, baseURL, providerName string) (*LLMResponse, error) {
+	// Log the API key status (without revealing the key)
+	llm.logger.Debug("Making API call", "provider", providerName, "baseURL", baseURL, "has_api_key", llm.config.APIKey != "", "api_key_length", len(llm.config.APIKey))
 	// Convert messages to OpenAI format
 	openaiMessages := make([]OpenAIMessage, len(messages))
 	for i, msg := range messages {

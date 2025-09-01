@@ -76,18 +76,30 @@ type Trigger struct {
 
 // Step defines a workflow step
 type Step struct {
-	Name            string                 `json:"name" validate:"required"`
-	Type            string                 `json:"type" validate:"required"`
-	Config          map[string]interface{} `json:"config,omitempty"`
-	DependsOn       []string               `json:"depends_on,omitempty"`
-	Retry           RetryConfig            `json:"retry,omitempty"`
-	ContinueOnError bool                   `json:"continue_on_error"`
+	Name              string                 `json:"name" validate:"required"`
+	Type              string                 `json:"type" validate:"required"`
+	Config            map[string]interface{} `json:"config,omitempty"`
+	DependsOn         []string               `json:"depends_on,omitempty"`
+	Retry             RetryConfig            `json:"retry,omitempty"`
+	ContinueOnError   bool                   `json:"continue_on_error"`
+	ContextTransforms []Transform            `json:"context_transforms,omitempty"`
+	PostTransforms    []Transform            `json:"post_transforms,omitempty"`
 }
 
 // RetryConfig defines retry behavior
 type RetryConfig struct {
 	MaxAttempts int    `json:"max_attempts"`
 	Backoff     string `json:"backoff"`
+}
+
+// Transform defines a data transformation operation
+type Transform struct {
+	Name      string                 `json:"name,omitempty"`
+	Source    string                 `json:"source" validate:"required"`
+	Transform string                 `json:"transform" validate:"required"`
+	Params    map[string]interface{} `json:"params,omitempty"`
+	StoreAs   string                 `json:"store_as,omitempty"`
+	Condition string                 `json:"condition,omitempty"`
 }
 
 // OutputSpec defines workflow output configuration
