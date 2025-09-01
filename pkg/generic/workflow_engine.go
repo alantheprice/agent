@@ -164,19 +164,19 @@ func (we *WorkflowEngine) executeStep(ctx context.Context, step Step, execCtx *E
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		if attempt > 1 {
 			we.logger.Info("Retrying step", "step", step.Name, "attempt", attempt)
-			
+
 			// Implement exponential backoff with jitter
 			backoffDuration := time.Duration(attempt-1) * time.Second * time.Duration(1<<uint(attempt-2))
 			if backoffDuration > 30*time.Second {
 				backoffDuration = 30 * time.Second // Cap at 30 seconds
 			}
-			
+
 			// Add jitter (random delay up to 1 second)
 			jitter := time.Duration(rand.Intn(1000)) * time.Millisecond
 			totalDelay := backoffDuration + jitter
-			
+
 			we.logger.Debug("Applying backoff delay", "delay", totalDelay, "attempt", attempt)
-			
+
 			select {
 			case <-time.After(totalDelay):
 				// Continue with retry
@@ -307,7 +307,7 @@ func (we *WorkflowEngine) executeLLMStep(ctx context.Context, step Step, execCtx
 
 	// Check for system prompt in step config
 	var response *LLMResponse
-	
+
 	if systemPrompt, ok := step.Config["system_prompt"].(string); ok && systemPrompt != "" {
 		// Render system prompt template if provided
 		renderedSystemPrompt, err := we.templateEngine.RenderTemplate(systemPrompt, previousResults, execCtx)
@@ -344,7 +344,7 @@ func (we *WorkflowEngine) executeLLMDisplayStep(ctx context.Context, step Step, 
 
 	// Check for system prompt in step config
 	var response *LLMResponse
-	
+
 	if systemPrompt, ok := step.Config["system_prompt"].(string); ok && systemPrompt != "" {
 		// Render system prompt template if provided
 		renderedSystemPrompt, err := we.templateEngine.RenderTemplate(systemPrompt, previousResults, execCtx)
@@ -894,9 +894,9 @@ func (we *WorkflowEngine) executeConditionStep(ctx context.Context, step Step, e
 
 	// Simple condition evaluation - check for basic conditions
 	result := we.evaluateSimpleCondition(renderedCondition, previousResults, execCtx)
-	
-	we.logger.Debug("Condition evaluation", 
-		"condition", conditionExpr, 
+
+	we.logger.Debug("Condition evaluation",
+		"condition", conditionExpr,
 		"rendered", renderedCondition,
 		"result", result)
 
@@ -906,7 +906,7 @@ func (we *WorkflowEngine) executeConditionStep(ctx context.Context, step Step, e
 // evaluateSimpleCondition performs basic condition evaluation
 func (we *WorkflowEngine) evaluateSimpleCondition(condition string, previousResults map[string]*StepResult, execCtx *ExecutionContext) bool {
 	condition = strings.TrimSpace(condition)
-	
+
 	// Handle basic boolean values
 	switch strings.ToLower(condition) {
 	case "true", "yes", "1":
@@ -914,7 +914,7 @@ func (we *WorkflowEngine) evaluateSimpleCondition(condition string, previousResu
 	case "false", "no", "0", "":
 		return false
 	}
-	
+
 	// Handle simple string comparisons
 	if strings.Contains(condition, "==") {
 		parts := strings.Split(condition, "==")
@@ -924,7 +924,7 @@ func (we *WorkflowEngine) evaluateSimpleCondition(condition string, previousResu
 			return left == right
 		}
 	}
-	
+
 	if strings.Contains(condition, "!=") {
 		parts := strings.Split(condition, "!=")
 		if len(parts) == 2 {
@@ -933,7 +933,7 @@ func (we *WorkflowEngine) evaluateSimpleCondition(condition string, previousResu
 			return left != right
 		}
 	}
-	
+
 	// Check for "contains" operation
 	if strings.Contains(condition, " contains ") {
 		parts := strings.Split(condition, " contains ")
@@ -943,7 +943,7 @@ func (we *WorkflowEngine) evaluateSimpleCondition(condition string, previousResu
 			return strings.Contains(left, right)
 		}
 	}
-	
+
 	// Default: treat non-empty string as true
 	return condition != ""
 }
@@ -1243,7 +1243,7 @@ func (we *WorkflowEngine) executeParallelStep(ctx context.Context, step Step, ex
 	}
 
 	resultChan := make(chan parallelResult, len(parallelSteps))
-	
+
 	// Start all parallel steps
 	for i, parallelStep := range parallelSteps {
 		go func(index int, step Step) {
@@ -1270,7 +1270,7 @@ func (we *WorkflowEngine) executeParallelStep(ctx context.Context, step Step, ex
 	// Collect results
 	results := make(map[string]interface{})
 	var errors []string
-	
+
 	for i := 0; i < len(parallelSteps); i++ {
 		select {
 		case result := <-resultChan:

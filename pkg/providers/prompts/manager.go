@@ -8,7 +8,7 @@ import (
 	"sync"
 	"text/template"
 
-	"github.com/alantheprice/agent-template/pkg/interfaces"
+	"github.com/alantheprice/agent/pkg/interfaces"
 )
 
 // Manager implements the PromptProvider interface

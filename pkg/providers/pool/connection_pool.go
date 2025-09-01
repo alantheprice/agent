@@ -6,8 +6,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/alantheprice/agent-template/pkg/interfaces"
-	"github.com/alantheprice/agent-template/pkg/interfaces/types"
+	"github.com/alantheprice/agent/pkg/interfaces"
+	"github.com/alantheprice/agent/pkg/interfaces/types"
 )
 
 // ConnectionPool manages a pool of provider connections for optimal performance

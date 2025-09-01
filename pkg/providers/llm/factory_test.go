@@ -6,8 +6,8 @@ import (
 	"io"
 	"testing"
 
-	"github.com/alantheprice/agent-template/pkg/interfaces"
-	"github.com/alantheprice/agent-template/pkg/interfaces/types"
+	"github.com/alantheprice/agent/pkg/interfaces"
+	"github.com/alantheprice/agent/pkg/interfaces/types"
 )
 
 // MockProviderFactory is a mock implementation of ProviderFactory for testing

@@ -4,18 +4,24 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/alantheprice/agent-template/pkg/interfaces"
-	"github.com/alantheprice/agent-template/pkg/interfaces/types"
-	"github.com/alantheprice/agent-template/pkg/providers/llm"
-	"github.com/alantheprice/agent-template/pkg/providers/llm/gemini"
-	"github.com/alantheprice/agent-template/pkg/providers/llm/ollama"
-	"github.com/alantheprice/agent-template/pkg/providers/llm/openai"
+	"github.com/alantheprice/agent/pkg/interfaces"
+	"github.com/alantheprice/agent/pkg/interfaces/types"
+	"github.com/alantheprice/agent/pkg/providers/llm"
+	"github.com/alantheprice/agent/pkg/providers/llm/deepinfra"
+	"github.com/alantheprice/agent/pkg/providers/llm/gemini"
+	"github.com/alantheprice/agent/pkg/providers/llm/ollama"
+	"github.com/alantheprice/agent/pkg/providers/llm/openai"
 )
 
 // RegisterDefaultProviders registers all default providers with the global registry
 func RegisterDefaultProviders() error {
 	// Register OpenAI provider
 	if err := llm.RegisterProvider(&openai.Factory{}); err != nil {
+		return err
+	}
+
+	// Register DeepInfra provider
+	if err := llm.RegisterProvider(&deepinfra.Factory{}); err != nil {
 		return err
 	}
 

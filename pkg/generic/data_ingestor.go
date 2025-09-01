@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/alantheprice/agent-template/pkg/embedding"
+	"github.com/alantheprice/agent/pkg/embedding"
 )
 
 // DataIngestor handles ingesting data from various sources

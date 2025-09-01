@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/alantheprice/agent-template/pkg/embedding"
+	"github.com/alantheprice/agent/pkg/embedding"
 )
 
 // Agent represents a generic AI agent
@@ -156,7 +156,7 @@ func (a *Agent) ExecuteWithContext(ctx context.Context, input string) error {
 		}
 		execCtx.Data["ingested_data"] = data
 		execCtx.Metrics.DataProcessed = int64(len(data))
-		
+
 		// Pass embedding data sources to tool registry
 		embeddingDataSources := a.dataIngestor.GetEmbeddingDataSources()
 		if len(embeddingDataSources) > 0 {

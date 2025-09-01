@@ -195,7 +195,7 @@ func (ow *OutputWriter) writeToWebhook(data []byte, output Output, execCtx *Exec
 // convertToYAML converts data to YAML format (simple implementation)
 func (ow *OutputWriter) convertToYAML(data interface{}, indent int) (string, error) {
 	indentStr := strings.Repeat("  ", indent)
-	
+
 	switch v := data.(type) {
 	case nil:
 		return "null", nil
@@ -258,18 +258,18 @@ func (ow *OutputWriter) convertToCSV(data interface{}) (string, error) {
 		if len(v) == 0 {
 			return "", nil
 		}
-		
+
 		// Check if it's an array of maps (typical case)
 		if firstItem, ok := v[0].(map[string]interface{}); ok {
 			var result strings.Builder
-			
+
 			// Write header
 			var headers []string
 			for key := range firstItem {
 				headers = append(headers, key)
 			}
 			result.WriteString(strings.Join(headers, ",") + "\n")
-			
+
 			// Write rows
 			for _, item := range v {
 				if itemMap, ok := item.(map[string]interface{}); ok {
@@ -288,7 +288,7 @@ func (ow *OutputWriter) convertToCSV(data interface{}) (string, error) {
 			}
 			return result.String(), nil
 		}
-		
+
 		// Handle array of primitive values
 		var values []string
 		for _, item := range v {
@@ -299,12 +299,12 @@ func (ow *OutputWriter) convertToCSV(data interface{}) (string, error) {
 			values = append(values, valueStr)
 		}
 		return strings.Join(values, ","), nil
-		
+
 	case map[string]interface{}:
 		// Convert single map to CSV with key-value pairs
 		var result strings.Builder
 		result.WriteString("Key,Value\n")
-		
+
 		for key, value := range v {
 			valueStr := fmt.Sprintf("%v", value)
 			if strings.Contains(valueStr, ",") || strings.Contains(valueStr, "\"") || strings.Contains(valueStr, "\n") {
@@ -313,7 +313,7 @@ func (ow *OutputWriter) convertToCSV(data interface{}) (string, error) {
 			result.WriteString(fmt.Sprintf("%s,%s\n", key, valueStr))
 		}
 		return result.String(), nil
-		
+
 	default:
 		// For primitive values, return as single cell
 		valueStr := fmt.Sprintf("%v", data)

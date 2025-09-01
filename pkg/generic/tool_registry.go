@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/alantheprice/agent-template/pkg/embedding"
+	"github.com/alantheprice/agent/pkg/embedding"
 )
 
 // GenericTool represents a tool that can be executed by the agent
@@ -515,11 +515,11 @@ func (tr *ToolRegistry) executeJSONFormat(ctx context.Context, params map[string
 	}
 
 	return map[string]interface{}{
-		"json":     string(jsonBytes),
-		"compact":  compact,
-		"indent":   indent,
-		"size":     len(jsonBytes),
-		"success":  true,
+		"json":    string(jsonBytes),
+		"compact": compact,
+		"indent":  indent,
+		"size":    len(jsonBytes),
+		"success": true,
 	}, nil
 }
 
@@ -731,12 +731,12 @@ func (tr *ToolRegistry) executeEmbeddingSearch(ctx context.Context, params map[s
 			similarity = similarities[i]
 		}
 		results = append(results, map[string]interface{}{
-			"file_path":   result.Source,
-			"content":     result.Content,
-			"similarity":  similarity,
-			"metadata":    result.Metadata,
-			"type":        result.Type,
-			"id":          result.ID,
+			"file_path":  result.Source,
+			"content":    result.Content,
+			"similarity": similarity,
+			"metadata":   result.Metadata,
+			"type":       result.Type,
+			"id":         result.ID,
 		})
 	}
 
@@ -750,4 +750,3 @@ func (tr *ToolRegistry) executeEmbeddingSearch(ctx context.Context, params map[s
 		"message":        fmt.Sprintf("Found %d matching results for query: %s", len(results), query),
 	}, nil
 }
-
