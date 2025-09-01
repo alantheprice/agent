@@ -14,11 +14,11 @@ echo
 
 # Build the project first
 echo "🔨 Building project..."
-cd /Users/alanp/dev/personal/agent-template
-if go build -o agent-template .; then
+cd "$(dirname "$0")/.."
+if go build -o agent .; then
     echo "✅ Build successful"
     # Also create a symlink for backward compatibility with tests
-    ln -sf agent-template generic-agent
+    ln -sf agent generic-agent
     echo "✅ Created generic-agent symlink for test compatibility"
 else
     echo "❌ Build failed - aborting tests"

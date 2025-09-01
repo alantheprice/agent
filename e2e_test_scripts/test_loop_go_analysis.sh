@@ -261,16 +261,16 @@ EOF
     
     # Test that the process command can at least validate the configuration
     echo "Testing agent configuration processing..."
-    if command -v ../../agent-template >/dev/null 2>&1; then
-        echo "Found agent-template binary, testing configuration validation..."
-        timeout 10s ../../agent-template validate go_analysis_agent.json 2>/dev/null
+    if command -v ../../agent >/dev/null 2>&1; then
+        echo "Found agent binary, testing configuration validation..."
+        timeout 10s ../../agent validate go_analysis_agent.json 2>/dev/null
         if [ $? -eq 124 ]; then
             echo "INFO: Configuration validation test timed out (expected for complex configs)"
         else
             echo "PASS: Configuration validation completed"
         fi
     else
-        echo "INFO: agent-template binary not found, skipping execution test"
+        echo "INFO: agent binary not found, skipping execution test"
     fi
     
     echo
