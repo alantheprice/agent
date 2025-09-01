@@ -81,18 +81,47 @@
           "config": {
             "tool": "shell_command",
             "params": {
-              "command": "git diff --staged --name-status",
+              "command": "git diff --staged",
               "timeout": 30
             }
           },
           "depends_on": ["welcome_and_validation"],
-          "timeout": "60s"
+          "timeout": "60s",
+          "post_transforms": [
+            {
+              "source": "get_staged_changes.output",
+              "transform": "extract_lines",
+              "params": {
+                "pattern": "^\\+.*",
+                "mode": "count"
+              },
+              "store_as": "added_lines_count"
+            },
+            {
+              "source": "get_staged_changes.output",
+              "transform": "extract_lines",
+              "params": {
+                "pattern": "^\\-.*",
+                "mode": "count"
+              },
+              "store_as": "deleted_lines_count"
+            },
+            {
+              "source": "get_staged_changes.output",
+              "transform": "regex_extract",
+              "params": {
+                "pattern": "diff --git a/([^ ]+) b/([^ ]+)",
+                "mode": "all"
+              },
+              "store_as": "modified_files"
+            }
+          ]
         },
         {
           "name": "infer_change_goals",
           "type": "llm",
           "config": {
-            "prompt": "First, analyze the full set of staged changes to understand the overall goal and purpose of this commit. Look at:\n\n1. **What is the main objective?** (feature, fix, refactor, etc.)\n2. **What problem is being solved?**\n3. **How do the files work together?**\n4. **What is the scope and impact?**\n\nProvide a clear, concise summary of what this commit is trying to achieve based on the code changes."
+            "prompt": "First, analyze the full set of staged changes to understand the overall goal and purpose of this commit. Look at:\n\n1. **What is the main objective?** (feature, fix, refactor, etc.)\n2. **What problem is being solved?**\n3. **How do the files work together?**\n4. **What is the scope and impact?**\n\nBased on the staged git diff shown below, provide a clear, concise summary of what this commit is trying to achieve:\n\n**Git Diff Output:**\n{get_staged_changes.output}\n\n**Analysis Instructions:**\n- Focus on the actual code changes, not just file names\n- Identify the type of changes: additions (+), deletions (-), modifications\n- Determine if this is a feature, fix, refactor, docs update, etc.\n- Assess the scope and potential impact\n\nProvide a clear, concise summary of what this commit is trying to achieve based on the actual code changes."
           },
           "depends_on": ["get_staged_changes"],
           "timeout": "2m"
@@ -101,7 +130,7 @@
           "name": "thorough_code_review",
           "type": "llm_display",
           "config": {
-            "prompt": "Now perform a thorough file-by-file code review. For each changed file, analyze:\n\n**Code Quality & Best Practices:**\n- Naming conventions and code organization\n- Function/method design and single responsibility\n- Error handling and edge cases\n- Code readability and maintainability\n\n**LLM Code Generation Issues (specifically look for):**\n- Over-complicated or verbose implementations\n- Unnecessary abstractions or patterns\n- Missing or inadequate error handling\n- Generic variable/function names\n- Incomplete implementations or TODOs\n- Copy-paste patterns without customization\n- Missing input validation\n- Hardcoded values that should be configurable\n\n**Security & Performance:**\n- Potential security vulnerabilities\n- Performance bottlenecks or inefficiencies\n- Resource management (memory, connections, etc.)\n\n**Testing & Documentation:**\n- Missing tests for new functionality\n- Insufficient documentation or comments\n- Breaking changes that need migration notes\n\nProvide specific, actionable feedback with line references where applicable."
+            "prompt": "Now perform a thorough file-by-file code review based on the actual code changes below. For each changed file, analyze:\n\n**Code Quality & Best Practices:**\n- Naming conventions and code organization\n- Function/method design and single responsibility\n- Error handling and edge cases\n- Code readability and maintainability\n\n**LLM Code Generation Issues (specifically look for):**\n- Over-complicated or verbose implementations\n- Unnecessary abstractions or patterns\n- Missing or inadequate error handling\n- Generic variable/function names\n- Incomplete implementations or TODOs\n- Copy-paste patterns without customization\n- Missing input validation\n- Hardcoded values that should be configurable\n\n**Security & Performance:**\n- Potential security vulnerabilities\n- Performance bottlenecks or inefficiencies\n- Resource management (memory, connections, etc.)\n\n**Testing & Documentation:**\n- Missing tests for new functionality\n- Insufficient documentation or comments\n- Breaking changes that need migration notes\n\n**Change Statistics (Auto-Extracted):**\n- Files modified: {len(modified_files)} files\n- Lines added: {added_lines_count} additions\n- Lines deleted: {deleted_lines_count} deletions\n- Net change: {subtract(added_lines_count, deleted_lines_count)} lines\n- Change summary: {infer_change_goals}\n\n**Code Changes to Review:**\n```diff\n{get_staged_changes.output}\n```\n\n**Review Instructions:**\n1. Analyze each file modification individually\n2. Look for patterns across multiple files\n3. Consider the overall change context from the goal analysis\n4. Use the change statistics to understand scope\n5. Provide specific line-by-line feedback where needed\n6. Highlight any critical issues that should block the commit\n\nProvide specific, actionable feedback with line references where applicable."
           },
           "depends_on": ["infer_change_goals"],
           "timeout": "5m"
@@ -136,8 +165,18 @@
           "name": "generate_commit_message",
           "type": "llm_display",
           "config": {
-            "prompt": "Based on the inferred goals and code review, generate a high-quality conventional commit message.\n\nFormat:\n```\ntype(scope): brief description (≤50 chars)\n\n- Detailed explanation of changes\n- Why these changes were made\n- Impact or benefits\n- Any breaking changes or migration notes\n```\n\nCommon types: feat, fix, docs, style, refactor, test, chore, perf, ci, build\n\nEnsure the message accurately reflects the goals identified earlier and addresses the main purpose of the changes."
+            "prompt": "Based on the code review analysis and user feedback, generate a high-quality conventional commit message that:\n\n1. **Follows conventional commit format**: `type(scope): description`\n2. **Uses appropriate type**: feat, fix, docs, style, refactor, test, chore, etc.\n3. **Has clear, concise subject** (≤50 characters)\n4. **includes detailed body** explaining the 'why' not just the 'what'\n5. **References any breaking changes**\n\n**Enhanced Context Analysis (Auto-Generated):**\n- Change Goal: {infer_change_goals}\n- Review Analysis: {thorough_code_review}\n- User Decision: {review_user_decision}\n\n**Change Statistics:**\n- Files modified: {len(modified_files)} files\n- Lines added: {added_lines_count}\n- Lines deleted: {deleted_lines_count}\n- Net change: {subtract(added_lines_count, deleted_lines_count)} lines\n- Has new files: {contains(get_staged_changes.output, 'new file')}\n- Has breaking changes: {contains(thorough_code_review, 'breaking')}\n\n**Generate the commit message in this format:**\n```\ntype(scope): short description\n\nDetailed explanation of changes:\n- Key changes made\n- Why these changes were necessary\n- Impact on the codebase\n\nStats: {len(modified_files)} files, +{added_lines_count}/-{deleted_lines_count} lines\n```"
           },
+          "post_transforms": [
+            {
+              "source": "generate_commit_message",
+              "transform": "string_process",
+              "params": {
+                "operation": "length"
+              },
+              "store_as": "commit_message_length"
+            }
+          ],
           "depends_on": ["review_user_decision"],
           "timeout": "2m",
           "retry_count": 1

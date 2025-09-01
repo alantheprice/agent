@@ -492,9 +492,121 @@ func (te *TemplateEngine) registerBuiltinFunctions() {
 	te.functions["last"] = te.lastFunction
 	te.functions["contains"] = te.containsFunction
 	te.functions["split"] = te.splitFunction
+	te.functions["add"] = te.addFunction
+	te.functions["subtract"] = te.subtractFunction
+	te.functions["multiply"] = te.multiplyFunction
+	te.functions["divide"] = te.divideFunction
 }
 
 // Built-in template functions implementation
+
+// Math functions
+func (te *TemplateEngine) addFunction(args []interface{}) (interface{}, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("add() expects 2 arguments, got %d", len(args))
+	}
+
+	a, err := te.toFloat64(args[0])
+	if err != nil {
+		return nil, fmt.Errorf("first argument to add(): %w", err)
+	}
+
+	b, err := te.toFloat64(args[1])
+	if err != nil {
+		return nil, fmt.Errorf("second argument to add(): %w", err)
+	}
+
+	result := a + b
+	if a == float64(int(a)) && b == float64(int(b)) {
+		return int(result), nil
+	}
+	return result, nil
+}
+
+func (te *TemplateEngine) subtractFunction(args []interface{}) (interface{}, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("subtract() expects 2 arguments, got %d", len(args))
+	}
+
+	a, err := te.toFloat64(args[0])
+	if err != nil {
+		return nil, fmt.Errorf("first argument to subtract(): %w", err)
+	}
+
+	b, err := te.toFloat64(args[1])
+	if err != nil {
+		return nil, fmt.Errorf("second argument to subtract(): %w", err)
+	}
+
+	result := a - b
+	if a == float64(int(a)) && b == float64(int(b)) {
+		return int(result), nil
+	}
+	return result, nil
+}
+
+func (te *TemplateEngine) multiplyFunction(args []interface{}) (interface{}, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("multiply() expects 2 arguments, got %d", len(args))
+	}
+
+	a, err := te.toFloat64(args[0])
+	if err != nil {
+		return nil, fmt.Errorf("first argument to multiply(): %w", err)
+	}
+
+	b, err := te.toFloat64(args[1])
+	if err != nil {
+		return nil, fmt.Errorf("second argument to multiply(): %w", err)
+	}
+
+	result := a * b
+	if a == float64(int(a)) && b == float64(int(b)) {
+		return int(result), nil
+	}
+	return result, nil
+}
+
+func (te *TemplateEngine) divideFunction(args []interface{}) (interface{}, error) {
+	if len(args) != 2 {
+		return nil, fmt.Errorf("divide() expects 2 arguments, got %d", len(args))
+	}
+
+	a, err := te.toFloat64(args[0])
+	if err != nil {
+		return nil, fmt.Errorf("first argument to divide(): %w", err)
+	}
+
+	b, err := te.toFloat64(args[1])
+	if err != nil {
+		return nil, fmt.Errorf("second argument to divide(): %w", err)
+	}
+
+	if b == 0 {
+		return nil, fmt.Errorf("division by zero")
+	}
+
+	return a / b, nil
+}
+
+func (te *TemplateEngine) toFloat64(val interface{}) (float64, error) {
+	switch v := val.(type) {
+	case float64:
+		return v, nil
+	case float32:
+		return float64(v), nil
+	case int:
+		return float64(v), nil
+	case int64:
+		return float64(v), nil
+	case int32:
+		return float64(v), nil
+	case string:
+		return strconv.ParseFloat(v, 64)
+	default:
+		return 0, fmt.Errorf("cannot convert %T to number", val)
+	}
+}
 
 func (te *TemplateEngine) lenFunction(args []interface{}) (interface{}, error) {
 	if len(args) != 1 {
