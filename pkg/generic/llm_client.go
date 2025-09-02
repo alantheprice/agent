@@ -39,21 +39,12 @@ func (llm *LLMClient) GetConfig() LLMConfig {
 
 // NewLLMClient creates a new LLM client
 func NewLLMClient(config LLMConfig, logger *slog.Logger) (*LLMClient, error) {
-	// Resolve API key using the new configuration system
+	// Resolve API key using the new configuration system with automatic prompting
 	if config.APIKey == "" {
-		apiKey := providerConfig.GetAPIKeyForProvider(config.Provider)
+		// Use the new prompting-enabled function for interactive key management
+		apiKey := providerConfig.GetAPIKeyForProviderWithPrompt(config.Provider, true)
 		config.APIKey = apiKey
-		logger.Debug("API key from new config system", "provider", config.Provider, "found", config.APIKey != "")
-
-		// If still no API key, prompt user to enter one
-		if config.APIKey == "" {
-			logger.Info("No API key found, prompting user", "provider", config.Provider)
-			var err error
-			config.APIKey, err = promptForAPIKey(config.Provider)
-			if err != nil {
-				return nil, fmt.Errorf("failed to get API key for %s: %w", config.Provider, err)
-			}
-		}
+		logger.Debug("API key from config system", "provider", config.Provider, "found", config.APIKey != "")
 	}
 
 	// Validate we have an API key

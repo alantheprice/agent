@@ -1,0 +1,216 @@
+{
+  "providers": {
+    "openai": {
+      "name": "OpenAI",
+      "base_url": "https://api.openai.com/v1",
+      "api_key_env": "OPENAI_API_KEY",
+      "supported_models": [
+        "gpt-4",
+        "gpt-4-turbo",
+        "gpt-4-turbo-preview",
+        "gpt-4-32k",
+        "gpt-3.5-turbo",
+        "gpt-3.5-turbo-16k"
+      ],
+      "capabilities": {
+        "supports_tools": true,
+        "supports_images": true,
+        "supports_stream": true,
+        "max_tokens": 128000
+      },
+      "default_model": "gpt-4-turbo",
+      "enabled": true
+    },
+    "gemini": {
+      "name": "Google Gemini",
+      "base_url": "https://generativelanguage.googleapis.com/v1beta",
+      "api_key_env": "GEMINI_API_KEY",
+      "supported_models": [
+        "gemini-pro",
+        "gemini-pro-vision",
+        "gemini-1.5-pro",
+        "gemini-1.5-flash"
+      ],
+      "capabilities": {
+        "supports_tools": true,
+        "supports_images": true,
+        "supports_stream": true,
+        "max_tokens": 32768
+      },
+      "default_model": "gemini-pro",
+      "enabled": true
+    },
+    "ollama": {
+      "name": "Ollama",
+      "base_url": "http://localhost:11434/v1",
+      "api_key_env": "OLLAMA_API_KEY",
+      "supported_models": [
+        "llama3.2",
+        "llama3.1",
+        "llama2",
+        "codellama",
+        "mistral",
+        "mixtral"
+      ],
+      "capabilities": {
+        "supports_tools": false,
+        "supports_images": false,
+        "supports_stream": true,
+        "max_tokens": 4096
+      },
+      "default_model": "llama3.2",
+      "enabled": true
+    },
+    "deepinfra": {
+      "name": "DeepInfra",
+      "base_url": "https://api.deepinfra.com/v1/openai",
+      "api_key_env": "DEEPINFRA_API_KEY",
+      "supported_models": [
+        "deepseek-ai/DeepSeek-V3.1",
+        "deepseek-ai/DeepSeek-V3",
+        "microsoft/WizardLM-2-8x22B",
+        "meta-llama/Meta-Llama-3.1-405B-Instruct",
+        "meta-llama/Meta-Llama-3.1-70B-Instruct",
+        "meta-llama/Meta-Llama-3.1-8B-Instruct",
+        "mistralai/Mixtral-8x22B-Instruct-v0.1",
+        "mistralai/Mixtral-8x7B-Instruct-v0.1"
+      ],
+      "supported_embedding_models": [
+        "Qwen/Qwen3-Embedding-4B",
+        "BAAI/bge-base-en-v1.5",
+        "BAAI/bge-large-en-v1.5"
+      ],
+      "capabilities": {
+        "supports_tools": true,
+        "supports_images": false,
+        "supports_stream": true,
+        "supports_embeddings": true,
+        "max_tokens": 32768
+      },
+      "default_model": "deepseek-ai/DeepSeek-V3.1",
+      "default_embedding_model": "Qwen/Qwen3-Embedding-4B",
+      "enabled": true
+    },
+    "groq": {
+      "name": "Groq",
+      "base_url": "https://api.groq.com/openai/v1",
+      "api_key_env": "GROQ_API_KEY",
+      "supported_models": [
+        "llama-3.2-90b-vision-preview",
+        "llama-3.1-70b-versatile",
+        "llama-3.1-8b-instant",
+        "mixtral-8x7b-32768",
+        "gemma2-9b-it"
+      ],
+      "capabilities": {
+        "supports_tools": true,
+        "supports_images": false,
+        "supports_stream": true,
+        "max_tokens": 32768
+      },
+      "default_model": "llama-3.1-70b-versatile",
+      "enabled": true
+    },
+    "cerebras": {
+      "name": "Cerebras",
+      "base_url": "https://api.cerebras.ai/v1",
+      "api_key_env": "CEREBRAS_API_KEY",
+      "supported_models": [
+        "llama3.1-70b",
+        "llama3.1-8b"
+      ],
+      "capabilities": {
+        "supports_tools": true,
+        "supports_images": false,
+        "supports_stream": true,
+        "max_tokens": 128000
+      },
+      "default_model": "llama3.1-70b",
+      "enabled": true
+    },
+    "deepseek": {
+      "name": "DeepSeek",
+      "base_url": "https://api.deepseek.com/v1",
+      "api_key_env": "DEEPSEEK_API_KEY",
+      "supported_models": [
+        "deepseek-chat",
+        "deepseek-coder"
+      ],
+      "capabilities": {
+        "supports_tools": true,
+        "supports_images": false,
+        "supports_stream": true,
+        "max_tokens": 64000
+      },
+      "default_model": "deepseek-chat",
+      "enabled": true
+    },
+    "github": {
+      "name": "GitHub Models",
+      "base_url": "https://models.inference.ai.azure.com",
+      "api_key_env": "GITHUB_TOKEN",
+      "supported_models": [
+        "gpt-4o",
+        "gpt-4o-mini",
+        "meta-llama-3.1-405b-instruct",
+        "meta-llama-3.1-70b-instruct",
+        "meta-llama-3.1-8b-instruct"
+      ],
+      "capabilities": {
+        "supports_tools": true,
+        "supports_images": true,
+        "supports_stream": true,
+        "max_tokens": 128000
+      },
+      "default_model": "gpt-4o",
+      "enabled": true
+    },
+    "lambda-ai": {
+      "name": "Lambda AI",
+      "base_url": "https://api.lambdalabs.com/v1",
+      "api_key_env": "LAMBDA_API_KEY",
+      "supported_models": [
+        "hermes-3-llama-3.1-405b-fp8",
+        "hermes-3-llama-3.1-70b-fp8"
+      ],
+      "capabilities": {
+        "supports_tools": true,
+        "supports_images": false,
+        "supports_stream": true,
+        "max_tokens": 128000
+      },
+      "default_model": "hermes-3-llama-3.1-70b-fp8",
+      "enabled": true
+    },
+    "jinai": {
+      "name": "Jina AI",
+      "base_url": "https://api.jina.ai/v1",
+      "api_key_env": "JINA_API_KEY",
+      "supported_models": [
+        "jina-reranker-v2-base-multilingual",
+        "jina-embeddings-v2-base-en"
+      ],
+      "capabilities": {
+        "supports_tools": false,
+        "supports_images": false,
+        "supports_stream": true,
+        "max_tokens": 8192
+      },
+      "default_model": "jina-reranker-v2-base-multilingual",
+      "enabled": true
+    }
+  },
+  "default_provider": "deepinfra",
+  "priority_order": [
+    "deepinfra",
+    "deepseek",
+    "cerebras",
+    "gemini",
+    "groq", 
+    "github",
+    "lambda-ai",
+    "ollama",
+    "openai",
+    "jinai"
+  ]
+}

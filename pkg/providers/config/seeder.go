@@ -1,12 +1,17 @@
 package config
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
+	"strings"
+	"syscall"
 	"time"
+
+	"golang.org/x/term"
 )
 
 // APIKeys represents the structure of the API keys file
@@ -71,19 +76,28 @@ func SeedAPIKeysFromLedit() error {
 	}
 
 	// Read current API secrets structure
-	secretsPath := filepath.Join("configs", "api_secrets.json")
+	credentialsPath, err := getCredentialsPath()
+	if err != nil {
+		return err
+	}
+
 	var apiKeys APIKeys
 
 	// Try to read existing file, if it doesn't exist, create default structure
-	if data, err := ioutil.ReadFile(secretsPath); err == nil {
+	if data, err := ioutil.ReadFile(credentialsPath); err == nil {
 		if err := json.Unmarshal(data, &apiKeys); err != nil {
-			return fmt.Errorf("failed to parse existing API secrets: %w", err)
+			return fmt.Errorf("failed to parse existing API credentials: %w", err)
 		}
 	} else {
 		// Initialize with empty structure
 		apiKeys = APIKeys{
 			APIKeys:     make(map[string]string),
 			Description: "API keys for LLM providers. Keys are loaded from environment variables or this file.",
+		}
+
+		// Create the .agents directory if it doesn't exist
+		if err := os.MkdirAll(filepath.Dir(credentialsPath), 0700); err != nil {
+			return fmt.Errorf("failed to create credentials directory: %w", err)
 		}
 	}
 
@@ -123,17 +137,17 @@ func SeedAPIKeysFromLedit() error {
 	if updated {
 		apiKeys.LastUpdated = time.Now().Format(time.RFC3339)
 
-		// Write updated API secrets
+		// Write updated API credentials
 		data, err := json.MarshalIndent(apiKeys, "", "  ")
 		if err != nil {
-			return fmt.Errorf("failed to marshal API secrets: %w", err)
+			return fmt.Errorf("failed to marshal API credentials: %w", err)
 		}
 
-		if err := ioutil.WriteFile(secretsPath, data, 0600); err != nil {
-			return fmt.Errorf("failed to write API secrets: %w", err)
+		if err := ioutil.WriteFile(credentialsPath, data, 0600); err != nil {
+			return fmt.Errorf("failed to write API credentials: %w", err)
 		}
 
-		fmt.Printf("Successfully seeded API keys from %s\n", legacyPath)
+		fmt.Printf("Successfully seeded API keys from %s to %s\n", legacyPath, credentialsPath)
 	} else {
 		fmt.Println("No API keys found to seed")
 	}
@@ -141,18 +155,30 @@ func SeedAPIKeysFromLedit() error {
 	return nil
 }
 
-// LoadAPIKeys loads API keys from the secrets file
-func LoadAPIKeys() (*APIKeys, error) {
-	secretsPath := filepath.Join("configs", "api_secrets.json")
-	
-	data, err := ioutil.ReadFile(secretsPath)
+// getCredentialsPath returns the path to the credentials file
+func getCredentialsPath() (string, error) {
+	homeDir, err := os.UserHomeDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read API secrets: %w", err)
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+	return filepath.Join(homeDir, ".agents", "credentials.json"), nil
+}
+
+// LoadAPIKeys loads API keys from the credentials file
+func LoadAPIKeys() (*APIKeys, error) {
+	credentialsPath, err := getCredentialsPath()
+	if err != nil {
+		return nil, err
+	}
+	
+	data, err := ioutil.ReadFile(credentialsPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read API credentials from %s: %w", credentialsPath, err)
 	}
 
 	var apiKeys APIKeys
 	if err := json.Unmarshal(data, &apiKeys); err != nil {
-		return nil, fmt.Errorf("failed to parse API secrets: %w", err)
+		return nil, fmt.Errorf("failed to parse API credentials: %w", err)
 	}
 
 	return &apiKeys, nil
@@ -175,8 +201,13 @@ func LoadProvidersConfig() (*ProvidersConfig, error) {
 	return &config, nil
 }
 
-// GetAPIKeyForProvider gets the API key for a provider, checking environment variables first
+// GetAPIKeyForProvider gets the API key for a provider, with automatic credential management
 func GetAPIKeyForProvider(providerName string) string {
+	return GetAPIKeyForProviderWithPrompt(providerName, false)
+}
+
+// GetAPIKeyForProviderWithPrompt gets the API key for a provider, optionally prompting user
+func GetAPIKeyForProviderWithPrompt(providerName string, allowPrompt bool) string {
 	// Load providers config to get the env var name
 	config, err := LoadProvidersConfig()
 	if err != nil {
@@ -195,13 +226,27 @@ func GetAPIKeyForProvider(providerName string) string {
 		}
 	}
 
-	// Fallback to secrets file
+	// Try to load from credentials file
 	apiKeys, err := LoadAPIKeys()
 	if err != nil {
+		// Credentials file doesn't exist, create it if prompting is allowed
+		if allowPrompt {
+			return handleMissingCredentials(providerName, provider.Name)
+		}
 		return ""
 	}
 
-	return apiKeys.APIKeys[providerName]
+	// Check if provider key exists in credentials file
+	if key, exists := apiKeys.APIKeys[providerName]; exists && key != "" {
+		return key
+	}
+
+	// Key is missing or empty, prompt user if allowed
+	if allowPrompt {
+		return promptAndSaveAPIKey(providerName, provider.Name)
+	}
+
+	return ""
 }
 
 // GetEmbeddingModelForProvider gets the default embedding model for a provider
@@ -220,8 +265,13 @@ func GetEmbeddingModelForProvider(providerName string) string {
 	return provider.DefaultEmbeddingModel
 }
 
-// SetAPIKey sets an API key in the secrets file
+// SetAPIKey sets an API key in the credentials file
 func SetAPIKey(providerName, apiKey string) error {
+	credentialsPath, err := getCredentialsPath()
+	if err != nil {
+		return err
+	}
+
 	apiKeys, err := LoadAPIKeys()
 	if err != nil {
 		// Create new structure if file doesn't exist
@@ -229,19 +279,23 @@ func SetAPIKey(providerName, apiKey string) error {
 			APIKeys:     make(map[string]string),
 			Description: "API keys for LLM providers. Keys are loaded from environment variables or this file.",
 		}
+
+		// Create the .agents directory if it doesn't exist
+		if err := os.MkdirAll(filepath.Dir(credentialsPath), 0700); err != nil {
+			return fmt.Errorf("failed to create credentials directory: %w", err)
+		}
 	}
 
 	apiKeys.APIKeys[providerName] = apiKey
 	apiKeys.LastUpdated = time.Now().Format(time.RFC3339)
 
-	secretsPath := filepath.Join("configs", "api_secrets.json")
 	data, err := json.MarshalIndent(apiKeys, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal API secrets: %w", err)
+		return fmt.Errorf("failed to marshal API credentials: %w", err)
 	}
 
-	if err := ioutil.WriteFile(secretsPath, data, 0600); err != nil {
-		return fmt.Errorf("failed to write API secrets: %w", err)
+	if err := ioutil.WriteFile(credentialsPath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write API credentials: %w", err)
 	}
 
 	return nil
@@ -261,4 +315,159 @@ func ListProviders() (map[string]bool, error) {
 	}
 
 	return result, nil
+}
+
+// handleMissingCredentials handles the case when credentials file doesn't exist
+func handleMissingCredentials(providerName, displayName string) string {
+	fmt.Printf("🔐 Credentials file not found. Setting up credentials for %s...\n", displayName)
+	
+	// Create empty credentials structure
+	credentialsPath, err := getCredentialsPath()
+	if err != nil {
+		fmt.Printf("❌ Error getting credentials path: %v\n", err)
+		return ""
+	}
+
+	// Create directory if it doesn't exist
+	if err := os.MkdirAll(filepath.Dir(credentialsPath), 0700); err != nil {
+		fmt.Printf("❌ Error creating credentials directory: %v\n", err)
+		return ""
+	}
+
+	// Prompt for API key
+	apiKey := promptForAPIKey(providerName, displayName)
+	if apiKey == "" {
+		return ""
+	}
+
+	// Create new credentials file with the key
+	apiKeys := &APIKeys{
+		APIKeys: map[string]string{
+			"openai":     "",
+			"gemini":     "",
+			"ollama":     "",
+			"deepinfra":  "",
+			"groq":       "",
+			"cerebras":   "",
+			"deepseek":   "",
+			"github":     "",
+			"lambda-ai":  "",
+			"jinai":      "",
+		},
+		LastUpdated: time.Now().Format(time.RFC3339),
+		Description: "API keys for LLM providers. Keys are loaded from environment variables or this file.",
+	}
+
+	// Set the specific key
+	apiKeys.APIKeys[providerName] = apiKey
+
+	// Save to file
+	if err := saveCredentials(apiKeys); err != nil {
+		fmt.Printf("❌ Error saving credentials: %v\n", err)
+		return ""
+	}
+
+	fmt.Printf("✅ API key saved successfully to %s\n", credentialsPath)
+	return apiKey
+}
+
+// promptAndSaveAPIKey prompts user for API key and saves it
+func promptAndSaveAPIKey(providerName, displayName string) string {
+	apiKey := promptForAPIKey(providerName, displayName)
+	if apiKey == "" {
+		return ""
+	}
+
+	// Save the key
+	if err := SetAPIKey(providerName, apiKey); err != nil {
+		fmt.Printf("❌ Error saving API key: %v\n", err)
+		return ""
+	}
+
+	fmt.Printf("✅ API key saved successfully for %s\n", displayName)
+	return apiKey
+}
+
+// promptForAPIKey prompts the user to enter an API key
+func promptForAPIKey(providerName, displayName string) string {
+	fmt.Printf("\n🔑 API key for %s (%s) is required.\n", displayName, providerName)
+	
+	// Show helpful information about where to get the key
+	switch providerName {
+	case "openai":
+		fmt.Println("   Get your key at: https://platform.openai.com/api-keys")
+	case "gemini":
+		fmt.Println("   Get your key at: https://makersuite.google.com/app/apikey")
+	case "deepinfra":
+		fmt.Println("   Get your key at: https://deepinfra.com/dash/api_keys")
+	case "groq":
+		fmt.Println("   Get your key at: https://console.groq.com/keys")
+	case "cerebras":
+		fmt.Println("   Get your key at: https://cloud.cerebras.ai/platform")
+	case "deepseek":
+		fmt.Println("   Get your key at: https://platform.deepseek.com/api_keys")
+	case "github":
+		fmt.Println("   Create a personal access token at: https://github.com/settings/tokens")
+	}
+
+	fmt.Printf("\nEnter your %s API key (input will be hidden): ", displayName)
+
+	// Read password-style input (hidden)
+	apiKey, err := readPassword()
+	if err != nil {
+		fmt.Printf("\n❌ Error reading API key: %v\n", err)
+		return ""
+	}
+
+	apiKey = strings.TrimSpace(apiKey)
+	if apiKey == "" {
+		fmt.Println("\n❌ No API key entered. Skipping configuration.")
+		return ""
+	}
+
+	// Basic validation
+	if len(apiKey) < 10 {
+		fmt.Println("\n⚠️  Warning: API key seems too short. Please verify it's correct.")
+	}
+
+	return apiKey
+}
+
+// readPassword reads a password from stdin without echoing
+func readPassword() (string, error) {
+	fd := int(syscall.Stdin)
+	if term.IsTerminal(fd) {
+		bytePassword, err := term.ReadPassword(fd)
+		if err != nil {
+			return "", err
+		}
+		return string(bytePassword), nil
+	} else {
+		// Fallback for non-terminal input
+		reader := bufio.NewReader(os.Stdin)
+		password, err := reader.ReadString('\n')
+		if err != nil {
+			return "", err
+		}
+		return strings.TrimSpace(password), nil
+	}
+}
+
+// saveCredentials saves the API keys to the credentials file
+func saveCredentials(apiKeys *APIKeys) error {
+	credentialsPath, err := getCredentialsPath()
+	if err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(apiKeys, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal API credentials: %w", err)
+	}
+
+	if err := ioutil.WriteFile(credentialsPath, data, 0600); err != nil {
+		return fmt.Errorf("failed to write API credentials: %w", err)
+	}
+
+	return nil
 }

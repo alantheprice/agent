@@ -10,13 +10,93 @@ The Agent Template System allows you to define AI agents through declarative JSO
 
 ```bash
 # Build the agent
-go build -o agent-template .
+go build -o agent .
 
-# Run an agent
-./agent-template process examples/configs/web_scraper_simple.json
+# Set up credentials (interactive)
+./agent setup-provider deepinfra
 
-# Validate configuration
-./agent-template validate examples/configs/content_creator.json
+# Run an agent (will auto-prompt for credentials if missing)
+./agent process examples/configs/web_scraper_simple.json
+
+# List available providers and models
+./agent list-providers
+./agent list-models deepinfra
+```
+
+## Credential Management
+
+The system provides intelligent, automatic credential management with multiple layers of security and convenience.
+
+### 🔐 Automatic Credential Detection
+
+Credentials are detected in this priority order:
+
+1. **Environment Variables** (highest priority)
+   ```bash
+   export DEEPINFRA_API_KEY="your-key-here"
+   export OPENAI_API_KEY="your-openai-key"
+   ```
+
+2. **Credentials File** (`~/.agents/credentials.json`)
+   - Automatically created on first use
+   - Secure permissions (600)
+   - JSON format for easy management
+
+3. **Interactive Prompt** (when agent runs)
+   - Auto-prompts when credentials missing
+   - Provides helpful links to get API keys
+   - Secure password-style input
+   - Automatically saves for future use
+
+### 📋 Credential Commands
+
+```bash
+# Interactive setup for specific provider
+./agent setup-provider deepinfra
+
+# Import from legacy location
+./agent seed-keys
+
+# Test credential system
+./agent test-credentials
+
+# List provider status
+./agent list-providers
+
+# Test specific provider
+./agent test-provider deepinfra
+```
+
+### 🔑 Provider API Keys
+
+Get your API keys from these providers:
+
+| Provider | Environment Variable | Get API Key |
+|----------|---------------------|-------------|
+| **DeepInfra** | `DEEPINFRA_API_KEY` | https://deepinfra.com/dash/api_keys |
+| **DeepSeek** | `DEEPSEEK_API_KEY` | https://platform.deepseek.com/api_keys |
+| **Cerebras** | `CEREBRAS_API_KEY` | https://cloud.cerebras.ai/platform |
+| **Gemini** | `GEMINI_API_KEY` | https://makersuite.google.com/app/apikey |
+| **Groq** | `GROQ_API_KEY` | https://console.groq.com/keys |
+| **GitHub** | `GITHUB_TOKEN` | https://github.com/settings/tokens |
+| **Lambda AI** | `LAMBDA_API_KEY` | https://lambdalabs.com/service/gpu-cloud |
+| **OpenAI** | `OPENAI_API_KEY` | https://platform.openai.com/api-keys |
+| **Jina AI** | `JINA_API_KEY` | https://jina.ai/ |
+
+### 💡 Usage Examples
+
+```bash
+# Use environment variable (temporary)
+DEEPINFRA_API_KEY="your-key" ./agent process config.json
+
+# Set up persistent credentials
+./agent setup-provider deepinfra  # Interactive setup
+
+# Check what's configured
+./agent test-credentials
+
+# Run agent (auto-prompts if needed)
+./agent process examples/configs/content_creator.json
 ```
 
 ## Core Features
@@ -36,12 +116,23 @@ Define agents entirely through JSON files with no code changes required:
 
 ### 🧠 Multi-LLM Support
 Built-in support for multiple LLM providers:
-- OpenAI (GPT-3.5, GPT-4)
-- Anthropic (Claude)
-- Google (Gemini)
-- Ollama (Local models)
-- DeepInfra
-- Groq
+- **DeepInfra** (DeepSeek-V3.1, Llama, Mixtral) - *Default*
+- **DeepSeek** (DeepSeek-Chat, DeepSeek-Coder)
+- **Cerebras** (Llama 3.1 70B/8B)
+- **Google** (Gemini Pro, Gemini 1.5)
+- **Groq** (Llama 3.1, Mixtral)
+- **GitHub Models** (GPT-4o, Llama 3.1)
+- **Lambda AI** (Hermes 3 Llama)
+- **Ollama** (Local models)
+- **OpenAI** (GPT-4, GPT-3.5)
+- **Jina AI** (Embeddings)
+
+### 🔐 Intelligent Credential Management
+Automatic credential detection and setup:
+- **Environment Variables**: Priority detection (e.g., `DEEPINFRA_API_KEY`)
+- **Secure Storage**: Encrypted storage in `~/.agents/credentials.json`
+- **Interactive Setup**: Auto-prompts for missing keys when needed
+- **Legacy Migration**: Import from `~/.ledit/api_keys.json`
 
 ### 🔄 Workflow Orchestration
 Define complex multi-step workflows with dependencies:
@@ -149,25 +240,25 @@ The Agent Template System features a sophisticated context management system tha
 ### Code Review Agent
 Analyzes git changes, provides detailed feedback, and generates commit messages:
 ```bash
-./agent-template process examples/git_workflow/git_workflow_assistant.json
+./agent process examples/git_workflow/git_workflow_assistant.json
 ```
 
 ### Web Scraper Agent
 Extracts structured data from websites according to JSON schemas:
 ```bash
-./agent-template process examples/configs/web_scraper.json
+./agent process examples/configs/web_scraper.json
 ```
 
 ### Content Creator Agent
 Generates articles, blog posts, and marketing content:
 ```bash
-./agent-template process examples/configs/content_creator.json
+./agent process examples/configs/content_creator.json
 ```
 
 ### Multi-Agent Orchestration
 Coordinate multiple agents for complex workflows:
 ```bash
-./agent-template process examples/multi_agent_orchestration/content_pipeline.json
+./agent process examples/multi_agent_orchestration/content_pipeline.json
 ```
 
 ## Configuration Schema
